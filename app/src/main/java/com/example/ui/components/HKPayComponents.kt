@@ -1215,39 +1215,111 @@ fun RecentCardActivitySection(
     onSeeAll: () -> Unit,
     onSelectOrder: (String) -> Unit,
     modifier: Modifier = Modifier,
-    title: String = "Recent Card Activity",
-    maxItems: Int = 4
+    title: String = "Recent Card Transactions",
+    maxItems: Int = 5
 ) {
-    Column(modifier = modifier.fillMaxWidth()) {
+    val extra = LocalHKPayColors.current
+    var activeFilter by remember { mutableStateOf("All") }
+    val filterOptions = listOf("All", "Payments", "Orders", "Security")
+    val filteredTransactions = remember(transactions, activeFilter) {
+        when (activeFilter) {
+            "Payments" -> transactions.filter {
+                it.txType.contains("Payment", ignoreCase = true) ||
+                    it.txType.contains("Purchase", ignoreCase = true) ||
+                    it.txType.contains("Funding", ignoreCase = true) ||
+                    it.txType.contains("Refund", ignoreCase = true)
+            }
+            "Orders" -> transactions.filter { it.txType.contains("Order", ignoreCase = true) }
+            "Security" -> transactions.filter {
+                it.txType.contains("Frozen", ignoreCase = true) ||
+                    it.txType.contains("Security", ignoreCase = true)
+            }
+            else -> transactions
+        }
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("dashboard_transaction_history")
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            if (transactions.isNotEmpty()) {
-                TextButton(
-                    onClick = onSeeAll,
-                    modifier = Modifier.testTag("recent_activity_see_all_button")
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = extra.cyanGlow.copy(alpha = 0.14f),
+                    border = BorderStroke(1.dp, extra.cyanGlow.copy(alpha = 0.4f))
                 ) {
-                    Text("See All")
+                    Text(
+                        text = "${transactions.size} synced",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = extra.cyanGlow,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
+            }
+            TextButton(
+                onClick = onSeeAll,
+                modifier = Modifier.testTag("recent_activity_see_all_button")
+            ) {
+                Text("View All")
+            }
+        }
+
+        if (transactions.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(filterOptions) { option ->
+                    val selected = activeFilter == option
+                    Surface(
+                        onClick = { activeFilter = option },
+                        shape = RoundedCornerShape(50),
+                        color = if (selected) extra.electricBlue.copy(alpha = 0.22f) else extra.glassSurface,
+                        border = BorderStroke(
+                            1.dp,
+                            if (selected) extra.cyanGlow else extra.glassBorder
+                        ),
+                        modifier = Modifier.testTag("dashboard_tx_filter_${option.lowercase()}")
+                    ) {
+                        Text(
+                            text = option,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (selected) extra.cyanGlow else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                        )
+                    }
                 }
             }
         }
-        Spacer(Modifier.height(6.dp))
-        if (transactions.isEmpty()) {
+
+        Spacer(Modifier.height(10.dp))
+        if (filteredTransactions.isEmpty()) {
             EmptyStateCard(
                 icon = HKPayIcons.ReceiptLong,
-                title = "No Recent Card Activity",
-                subtitle = "Card purchases, issuing fees, loads, and settlements from Firebase appear here in real time."
+                title = if (transactions.isEmpty()) "No Recent Card Transactions" else "No $activeFilter Transactions",
+                subtitle = if (transactions.isEmpty()) {
+                    "Card purchases, order payments, freeze events, and loads from Firebase Realtime Database appear here live."
+                } else {
+                    "No transactions currently match the $activeFilter filter."
+                }
             )
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                transactions.take(maxItems).forEach { tx ->
+                filteredTransactions.take(maxItems).forEach { tx ->
                     TransactionActivityCard(
                         tx = tx,
                         onClick = if (tx.orderId.isNotBlank()) {

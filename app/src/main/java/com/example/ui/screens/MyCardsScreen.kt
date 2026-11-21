@@ -355,6 +355,23 @@ fun MyCardsScreen(
                         }
 
                         Spacer(Modifier.height(12.dp))
+                        if (isFrozen) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = extra.warning.copy(alpha = 0.14f),
+                                border = BorderStroke(1.dp, extra.warning.copy(alpha = 0.45f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 10.dp)
+                            ) {
+                                Text(
+                                    text = "Card is currently frozen. All new transactions and card detail reveals are blocked until you unfreeze it.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = extra.warning,
+                                    modifier = Modifier.padding(10.dp)
+                                )
+                            }
+                        }
                         when {
                             card.providerSecureViewSupported && card.providerCardApiUrl.startsWith("https://") -> {
                                 Row(
@@ -362,6 +379,7 @@ fun MyCardsScreen(
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
                                     OutlinedButton(
+                                        enabled = !isFrozen,
                                         onClick = {
                                             val alreadyRevealed = revealed != null
                                             if (!alreadyRevealed && biometricEnabled && activity != null) {
@@ -439,6 +457,7 @@ fun MyCardsScreen(
                             }
                             card.providerSecureViewSupported && card.hostedCardViewUrl.startsWith("https://") -> {
                                 OutlinedButton(
+                                    enabled = !isFrozen,
                                     onClick = {
                                         runCatching {
                                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(card.hostedCardViewUrl)))

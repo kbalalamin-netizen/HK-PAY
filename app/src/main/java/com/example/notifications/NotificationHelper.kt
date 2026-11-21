@@ -105,22 +105,28 @@ object NotificationHelper {
         packageName: String,
         orderId: String,
         orderStatus: String,
-        trackingNumber: String = ""
+        trackingNumber: String = "",
+        previousStatus: String = ""
     ): Pair<String, String> {
         val firstName = customerName.trim().substringBefore(" ").ifBlank { "Member" }
         val cardLabel = packageName.ifBlank { "HK PAY Physical Card" }
-        val title = when (orderStatus) {
+        val normalizedStatus = orderStatus.trim()
+        val title = when (normalizedStatus) {
             "Payment Confirmed" -> "$firstName, Payment Confirmed!"
             "KYC Approved" -> "$firstName, KYC Approved"
-            "Card Processing" -> "$cardLabel is Being Prepared"
+            "Processing", "Card Processing" -> "$cardLabel is Being Prepared"
             "Card Issued" -> "Your $cardLabel is Issued!"
             "Shipped", "In Transit" -> "On the Way: $cardLabel"
             "Delivered" -> "$cardLabel Delivered!"
             "Active" -> "$cardLabel is Now Active"
-            else -> "Order Update: $orderStatus"
+            else -> "Order Update: $normalizedStatus"
         }
         val body = buildString {
-            append("Hi $firstName, your $cardLabel ($orderId) status updated to $orderStatus.")
+            if (previousStatus.isNotBlank() && !previousStatus.equals(normalizedStatus, ignoreCase = true)) {
+                append("Hi $firstName, your $cardLabel ($orderId) moved from $previousStatus to $normalizedStatus.")
+            } else {
+                append("Hi $firstName, your $cardLabel ($orderId) status updated to $normalizedStatus.")
+            }
             if (trackingNumber.isNotBlank()) {
                 append(" Tracking: $trackingNumber.")
             }

@@ -705,6 +705,7 @@ private fun MainAuthenticatedHost(
                                     onToggleTheme = mainViewModel::cycleThemeMode,
                                     onOpenLanguagePicker = { showLanguagePicker = true },
                                     onToggleBalanceVisible = mainViewModel::toggleBalanceVisibility,
+                                    onToggleCardFreeze = mainViewModel::toggleCardFreeze,
                                     onNavigateRoute = ::navigateSliderAction,
                                     onNavigateBuyCard = { navigateTopLevel(BuyStoreRoute) },
                                     onNavigateCardSelection = { navController.navigate(CardSelectionRoute()) },

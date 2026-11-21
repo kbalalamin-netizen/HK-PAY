@@ -69,7 +69,10 @@ data class MainDashboardState(
         }
 
     fun isCardFrozen(card: IssuedCard): Boolean {
-        return card.isFrozen || card.cardId in userProfile.frozenCardIds
+        return card.isFrozen ||
+            card.cardId in userProfile.frozenCardIds ||
+            card.cardStatus.equals("Frozen", ignoreCase = true) ||
+            card.cardStatus.equals("Inactive", ignoreCase = true)
     }
 
     val availableReferralCredit: Double
@@ -300,7 +303,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         packageName = order.packageName,
                         orderId = order.orderId,
                         orderStatus = order.orderStatus,
-                        trackingNumber = order.trackingNumber
+                        trackingNumber = order.trackingNumber,
+                        previousStatus = previous
                     )
                     NotificationHelper.showNotification(
                         context = getApplication(),
@@ -478,10 +482,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _state.update { it.copy(freezingCardId = card.cardId) }
             repository.toggleCardFreeze(uid, card.cardId, freeze)
                 .onSuccess {
-                    _state.update { it.copy(freezingCardId = null) }
+                    _state.update {
+                        it.copy(
+                            freezingCardId = null,
+                            revealedCardData = if (freeze) it.revealedCardData - card.cardId else it.revealedCardData
+                        )
+                    }
                     _events.emit(
                         UiEvent.ShowMessage(
-                            if (freeze) "Card •••• ${card.last4.ifBlank { "HK" }} frozen." else "Card •••• ${card.last4.ifBlank { "HK" }} unfrozen."
+                            if (freeze) {
+                                "Card •••• ${card.last4.ifBlank { "HK" }} frozen. Further transactions blocked."
+                            } else {
+                                "Card •••• ${card.last4.ifBlank { "HK" }} unfrozen and active."
+                            }
                         )
                     )
                 }
@@ -574,6 +587,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             messaging.subscribeToTopic("all_users")
             messaging.subscribeToTopic("user_$uid")
             messaging.subscribeToTopic("orders_$uid")
+            messaging.subscribeToTopic("order_status_updates")
             messaging.token.addOnSuccessListener { token ->
                 if (!token.isNullOrBlank()) {
                     viewModelScope.launch(Dispatchers.IO) {
@@ -838,6 +852,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleCardSensitiveData(card: IssuedCard) {
+        if (_state.value.isCardFrozen(card)) {
+            viewModelScope.launch {
+                _events.emit(
+                    UiEvent.ShowMessage(
+                        "Card •••• ${card.last4.ifBlank { "HK" }} is frozen. Unfreeze the card to access card details.",
+                        isError = true
+                    )
+                )
+            }
+            return
+        }
         val current = _state.value.revealedCardData[card.cardId]
         if (current != null) {
             _state.update {

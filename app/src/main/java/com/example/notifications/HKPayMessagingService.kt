@@ -3,6 +3,7 @@ package com.example.notifications
 import com.example.data.model.HKPayConstants
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 
@@ -11,6 +12,13 @@ class HKPayMessagingService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
         super.onNewToken(token)
         val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+        runCatching {
+            val messaging = FirebaseMessaging.getInstance()
+            messaging.subscribeToTopic("all_users")
+            messaging.subscribeToTopic("user_$uid")
+            messaging.subscribeToTopic("orders_$uid")
+            messaging.subscribeToTopic("order_status_updates")
+        }
         FirebaseDatabase.getInstance(HKPayConstants.FIREBASE_DATABASE_URL)
             .reference
             .child("users")
@@ -23,7 +31,8 @@ class HKPayMessagingService : FirebaseMessagingService() {
         super.onMessageReceived(message)
         val data = message.data
         val orderId = data["orderId"] ?: data["referenceId"].orEmpty()
-        val orderStatus = data["orderStatus"].orEmpty()
+        val orderStatus = data["orderStatus"] ?: data["status"] ?: data["newStatus"].orEmpty()
+        val previousStatus = data["previousStatus"].orEmpty()
         val customerName = data["customerName"]
             ?: FirebaseAuth.getInstance().currentUser?.displayName.orEmpty()
         val cardName = data["cardName"] ?: data["packageName"].orEmpty()
@@ -36,7 +45,8 @@ class HKPayMessagingService : FirebaseMessagingService() {
                 packageName = cardName,
                 orderId = orderId,
                 orderStatus = orderStatus,
-                trackingNumber = trackingNumber
+                trackingNumber = trackingNumber,
+                previousStatus = previousStatus
             )
         } else {
             val t = message.notification?.title ?: data["title"] ?: "HK PAY Update"

@@ -303,10 +303,14 @@ class HKPayRepository(
         database.reference.child("users").child(uid).child("frozenCards").child(cardId)
             .setValue(freeze).awaitResult()
 
-        // Also update the card node if permitted by RTDB rules
+        // Also update the card node freeze flag and status if permitted by RTDB rules
         runCatching {
             database.reference.child("cards").child(uid).child(cardId)
                 .child("isFrozen").setValue(freeze).awaitResult()
+        }
+        runCatching {
+            database.reference.child("cards").child(uid).child(cardId)
+                .child("cardStatus").setValue(if (freeze) "Frozen" else "Active").awaitResult()
         }
 
         val txId = "TXN-SEC-${now.toString().takeLast(6)}-${UUID.randomUUID().toString().take(4).uppercase(Locale.US)}"

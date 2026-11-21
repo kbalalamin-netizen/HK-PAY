@@ -71,6 +71,9 @@
         "$cardId": {
           "isFrozen": {
             ".write": "auth != null && auth.uid == $uid && newData.isBoolean()"
+          },
+          "cardStatus": {
+            ".write": "auth != null && auth.uid == $uid && (newData.val() == 'Frozen' || newData.val() == 'Active')"
           }
         }
       }
@@ -85,7 +88,7 @@
       "$uid": {
         ".read": "auth != null && auth.uid == $uid",
         "$txId": {
-          ".write": "auth != null && auth.uid == $uid && !data.exists() && newData.child('userId').val() == auth.uid && newData.child('status').val() == 'Pending'"
+          ".write": "auth != null && auth.uid == $uid && !data.exists() && newData.child('userId').val() == auth.uid && (newData.child('status').val() == 'Pending' || ((newData.child('txType').val() == 'Card Frozen' || newData.child('txType').val() == 'Card Unfrozen') && newData.child('amount').val() == 0))"
         }
       }
     },

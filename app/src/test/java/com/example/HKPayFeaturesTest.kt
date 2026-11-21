@@ -181,4 +181,34 @@ class HKPayFeaturesTest {
         assertEquals(1.0f, CardOrder(orderStatus = "Delivered").trackingProgressFraction(), 0.001f)
         assertEquals(0f, CardOrder(orderStatus = "Cancelled").trackingProgressFraction(), 0.001f)
     }
+
+    @Test
+    fun `isCardFrozen respects cardStatus Frozen and Inactive in addition to flags`() {
+        val statusFrozenCard = IssuedCard(cardId = "c3", cardStatus = "Frozen", isFrozen = false)
+        val statusInactiveCard = IssuedCard(cardId = "c4", cardStatus = "Inactive", isFrozen = false)
+        val activeCard = IssuedCard(cardId = "c5", cardStatus = "Active", isFrozen = false)
+        val state = MainDashboardState(issuedCards = listOf(statusFrozenCard, statusInactiveCard, activeCard))
+
+        assertTrue(state.isCardFrozen(statusFrozenCard))
+        assertTrue(state.isCardFrozen(statusInactiveCard))
+        assertFalse(state.isCardFrozen(activeCard))
+        assertEquals(1, state.activeCardsCount)
+    }
+
+    @Test
+    fun `buildPersonalizedOrderMessage formats Processing to Shipped transition cleanly`() {
+        val (title, body) = NotificationHelper.buildPersonalizedOrderMessage(
+            customerName = "Hasan Karim",
+            packageName = "HK PAY Titanium",
+            orderId = "ORD-4455",
+            orderStatus = "Shipped",
+            trackingNumber = "DHL-9921",
+            previousStatus = "Processing"
+        )
+        assertTrue(title.contains("HK PAY Titanium"))
+        assertTrue(body.contains("Processing"))
+        assertTrue(body.contains("Shipped"))
+        assertTrue(body.contains("ORD-4455"))
+        assertTrue(body.contains("DHL-9921"))
+    }
 }

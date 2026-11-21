@@ -28,14 +28,21 @@ import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -82,6 +89,7 @@ fun DashboardScreen(
     onToggleTheme: () -> Unit,
     onOpenLanguagePicker: () -> Unit,
     onToggleBalanceVisible: () -> Unit,
+    onToggleCardFreeze: (IssuedCard, Boolean) -> Unit,
     onNavigateRoute: (String) -> Unit,
     onNavigateBuyCard: () -> Unit,
     onNavigateCardSelection: () -> Unit,
@@ -376,18 +384,36 @@ fun DashboardScreen(
                             )
 
                             if (linkedCards.isNotEmpty()) {
+                                var selectedCardId by remember(linkedCards) {
+                                    mutableStateOf(linkedCards.firstOrNull()?.cardId.orEmpty())
+                                }
+                                val selectedCard = linkedCards.firstOrNull { it.cardId == selectedCardId }
+                                    ?: linkedCards.first()
+                                val isSelectedFrozen = state.isCardFrozen(selectedCard)
+                                val isFreezingSelected = state.freezingCardId == selectedCard.cardId
+
                                 Spacer(Modifier.height(12.dp))
                                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     items(linkedCards, key = { it.cardId }) { card ->
                                         val frozen = state.isCardFrozen(card)
+                                        val isCurrent = card.cardId == selectedCard.cardId
                                         Surface(
-                                            onClick = onNavigateMyCards,
+                                            onClick = { selectedCardId = card.cardId },
                                             shape = RoundedCornerShape(12.dp),
-                                            color = Color.White.copy(alpha = 0.10f),
+                                            color = if (isCurrent) {
+                                                Color.White.copy(alpha = 0.18f)
+                                            } else {
+                                                Color.White.copy(alpha = 0.08f)
+                                            },
                                             border = BorderStroke(
-                                                1.dp,
-                                                if (frozen) Color(0xFF7DD3FC).copy(alpha = 0.7f) else Color.White.copy(alpha = 0.2f)
-                                            )
+                                                width = if (isCurrent) 1.4.dp else 1.dp,
+                                                color = when {
+                                                    frozen -> Color(0xFF7DD3FC).copy(alpha = 0.85f)
+                                                    isCurrent -> Color(0xFF5CEBFF)
+                                                    else -> Color.White.copy(alpha = 0.2f)
+                                                }
+                                            ),
+                                            modifier = Modifier.testTag("dashboard_card_chip_${card.cardId}")
                                         ) {
                                             Row(
                                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -419,6 +445,132 @@ fun DashboardScreen(
                                                 }
                                             }
                                         }
+                                    }
+                                }
+
+                                Spacer(Modifier.height(12.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = if (isSelectedFrozen) {
+                                        Color(0xFFF59E0B).copy(alpha = 0.16f)
+                                    } else {
+                                        Color.White.copy(alpha = 0.09f)
+                                    },
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (isSelectedFrozen) Color(0xFFFBBF24).copy(alpha = 0.7f) else Color(0xFF5CEBFF).copy(alpha = 0.35f)
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .padding(end = 10.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = HKPayIcons.Freeze,
+                                                contentDescription = "Freeze card status",
+                                                tint = if (isSelectedFrozen) Color(0xFFFBBF24) else Color(0xFF5CEBFF),
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                            Spacer(Modifier.width(10.dp))
+                                            Column {
+                                                Text(
+                                                    text = "${HKPayStrings.freezeCard()} ••${selectedCard.last4.ifBlank { "HK" }}",
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = Color.White
+                                                )
+                                                Text(
+                                                    text = if (isSelectedFrozen) {
+                                                        "Card inactive • Further transactions blocked"
+                                                    } else {
+                                                        "Card active • Toggle to block new transactions"
+                                                    },
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = if (isSelectedFrozen) Color(0xFFFDE68A) else Color.White.copy(alpha = 0.78f)
+                                                )
+                                            }
+                                        }
+                                        if (isFreezingSelected) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(24.dp),
+                                                strokeWidth = 2.2.dp,
+                                                color = Color(0xFF5CEBFF)
+                                            )
+                                        } else {
+                                            Switch(
+                                                checked = isSelectedFrozen,
+                                                onCheckedChange = { freeze ->
+                                                    onToggleCardFreeze(selectedCard, freeze)
+                                                },
+                                                colors = SwitchDefaults.colors(
+                                                    checkedThumbColor = Color.White,
+                                                    checkedTrackColor = Color(0xFFF59E0B),
+                                                    uncheckedThumbColor = Color.White,
+                                                    uncheckedTrackColor = Color.White.copy(alpha = 0.25f)
+                                                ),
+                                                modifier = Modifier.testTag("dashboard_freeze_card_switch")
+                                            )
+                                        }
+                                    }
+                                }
+                            } else {
+                                Spacer(Modifier.height(12.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = Color.White.copy(alpha = 0.08f),
+                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .padding(end = 10.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = HKPayIcons.Freeze,
+                                                contentDescription = null,
+                                                tint = Color(0xFF5CEBFF),
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                            Spacer(Modifier.width(10.dp))
+                                            Column {
+                                                Text(
+                                                    text = HKPayStrings.freezeCard(),
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = Color.White
+                                                )
+                                                Text(
+                                                    text = "Available once your physical card is issued",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = Color.White.copy(alpha = 0.72f)
+                                                )
+                                            }
+                                        }
+                                        Switch(
+                                            checked = false,
+                                            onCheckedChange = null,
+                                            enabled = false,
+                                            modifier = Modifier.testTag("dashboard_freeze_card_switch")
+                                        )
                                     }
                                 }
                             }
