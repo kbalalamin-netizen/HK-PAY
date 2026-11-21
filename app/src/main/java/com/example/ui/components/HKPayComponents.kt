@@ -1,10 +1,14 @@
 package com.example.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -19,6 +23,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -36,12 +42,17 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
@@ -52,12 +63,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.data.model.CardDesignOption
 import com.example.data.model.ThemeMode
 import com.example.data.model.TransactionRecord
 import com.example.ui.theme.HKPayIcons
 import com.example.ui.theme.JetBrainsMonoFontFamily
 import com.example.ui.theme.LocalHKPayColors
 import com.example.util.FormatUtils
+import com.example.util.LocationCatalog
 
 @Composable
 fun HKPayBackdrop(
@@ -480,6 +493,406 @@ fun HKPayPhysicalCardVisual(
                             color = Color(0xFFE0F2FE),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Interactive, dynamic physical card preview used in the card ordering flow.
+ * Smoothly animates colors across card finishes, supports front/back 3D flip,
+ * and updates cardholder name & delivery country live as the user edits their order.
+ */
+@Composable
+fun DynamicOrderCardPreview(
+    cardPackageName: String,
+    cardType: String,
+    network: String,
+    cardholderName: String,
+    countryName: String,
+    selectedDesign: CardDesignOption,
+    allDesigns: List<CardDesignOption>,
+    onSelectDesign: (CardDesignOption) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val extra = LocalHKPayColors.current
+    var showBack by remember { mutableStateOf(false) }
+
+    val animatedStart by animateColorAsState(
+        targetValue = Color(selectedDesign.gradientStartHex),
+        animationSpec = tween(360),
+        label = "cardStartColor"
+    )
+    val animatedEnd by animateColorAsState(
+        targetValue = Color(selectedDesign.gradientEndHex),
+        animationSpec = tween(360),
+        label = "cardEndColor"
+    )
+    val animatedAccent by animateColorAsState(
+        targetValue = Color(selectedDesign.accentHex),
+        animationSpec = tween(360),
+        label = "cardAccentColor"
+    )
+    val rotationYAnim by animateFloatAsState(
+        targetValue = if (showBack) 180f else 0f,
+        animationSpec = tween(480),
+        label = "cardFlipRotation"
+    )
+    val countryInfo = remember(countryName) { LocationCatalog.countryFor(countryName) }
+    val cardShape = RoundedCornerShape(22.dp)
+
+    GlassCard(modifier = modifier.testTag("dynamic_order_card_preview")) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Live Physical Card Preview",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "${selectedDesign.name} • ${selectedDesign.finishLabel}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = extra.cyanGlow,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Surface(
+                onClick = { showBack = !showBack },
+                shape = RoundedCornerShape(50),
+                color = extra.electricBlue.copy(alpha = 0.16f),
+                border = BorderStroke(1.dp, extra.cyanGlow.copy(alpha = 0.5f)),
+                modifier = Modifier.testTag("buy_preview_flip_button")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = HKPayIcons.CreditCard,
+                        contentDescription = null,
+                        tint = extra.cyanGlow,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = if (showBack) "Show Front" else "Flip Back",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = extra.cyanGlow,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(212.dp)
+                .graphicsLayer {
+                    rotationY = rotationYAnim
+                    cameraDistance = 12f * density
+                }
+                .clip(cardShape)
+                .clickable { showBack = !showBack }
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(animatedStart, animatedEnd, animatedStart.copy(alpha = 0.88f))
+                    )
+                )
+                .border(
+                    width = 1.3.dp,
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            animatedAccent.copy(alpha = 0.82f),
+                            extra.electricBlue.copy(alpha = 0.35f),
+                            Color.White.copy(alpha = 0.2f)
+                        )
+                    ),
+                    shape = cardShape
+                )
+        ) {
+            if (rotationYAnim <= 90f) {
+                // Front face
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Image(
+                                painter = painterResource(id = R.drawable.hk_pay_logo),
+                                contentDescription = "HK PAY Logo",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "HK PAY",
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "$cardPackageName • ${selectedDesign.name}",
+                                    color = animatedAccent,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = Color.White.copy(alpha = 0.14f),
+                            border = BorderStroke(1.dp, animatedAccent.copy(alpha = 0.65f))
+                        ) {
+                            Text(
+                                text = "${countryInfo.flagEmoji} ${countryInfo.isoCode}",
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(width = 44.dp, height = 32.dp)
+                                .clip(RoundedCornerShape(7.dp))
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(Color(0xFFF6D365), Color(0xFFD39D38))
+                                    )
+                                )
+                                .border(1.dp, Color(0xFFFFEEAA), RoundedCornerShape(7.dp))
+                        )
+                        Icon(
+                            imageVector = HKPayIcons.Contactless,
+                            contentDescription = "Contactless NFC",
+                            tint = animatedAccent,
+                            modifier = Modifier.size(26.dp)
+                        )
+                        Spacer(Modifier.weight(1f))
+                        if (network.isNotBlank()) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color.White.copy(alpha = 0.14f)
+                            ) {
+                                Text(
+                                    text = network.uppercase(),
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Text(
+                        text = "4532  ••••  ••••  ••••",
+                        color = Color.White,
+                        fontFamily = JetBrainsMonoFontFamily,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 1.6.sp,
+                        maxLines = 1
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "EMBOSSED CARDHOLDER",
+                                color = Color.White.copy(alpha = 0.65f),
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                            Text(
+                                text = cardholderName.ifBlank { "YOUR FULL NAME" }.uppercase(),
+                                color = Color.White,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = cardType.ifBlank { "PHYSICAL" }.uppercase(),
+                                color = animatedAccent,
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                            Text(
+                                text = "VALID THRU MM/YY",
+                                color = Color.White.copy(alpha = 0.85f),
+                                fontFamily = JetBrainsMonoFontFamily,
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    }
+                }
+            } else {
+                // Back face (counter-rotated 180f so text is not mirrored)
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { rotationY = 180f }
+                        .padding(vertical = 18.dp),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    // Magnetic stripe
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(40.dp)
+                            .background(Color(0xFF070B14))
+                    )
+
+                    // Signature strip & CVV panel
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(36.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFFE5ECF6))
+                                .padding(horizontal = 10.dp),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            Text(
+                                text = cardholderName.ifBlank { "AUTHORIZED SIGNATURE" }.uppercase(),
+                                color = Color(0xFF1F2937),
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color.White
+                        ) {
+                            Text(
+                                text = "CVV •••",
+                                color = Color(0xFF0A192F),
+                                fontFamily = JetBrainsMonoFontFamily,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Image(
+                                painter = painterResource(id = R.drawable.hk_pay_logo),
+                                contentDescription = "HK PAY Hologram",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clip(RoundedCornerShape(7.dp))
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "HK PAY Global Issuing • ${selectedDesign.name}",
+                                color = Color.White.copy(alpha = 0.8f),
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Text(
+                            text = "Tap to flip",
+                            color = animatedAccent,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = "Switch Card Finish Before Ordering",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(8.dp))
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(allDesigns, key = { it.id }) { option ->
+                val isSelected = option.id == selectedDesign.id
+                Surface(
+                    onClick = { onSelectDesign(option) },
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isSelected) extra.electricBlue.copy(alpha = 0.2f) else extra.glassSurface,
+                    border = BorderStroke(
+                        width = if (isSelected) 1.5.dp else 1.dp,
+                        color = if (isSelected) Color(option.accentHex) else extra.glassBorder
+                    ),
+                    modifier = Modifier.testTag("buy_design_chip_${option.id}")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(16.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(Color(option.gradientStartHex), Color(option.accentHex))
+                                    )
+                                )
+                                .border(1.dp, Color.White.copy(alpha = 0.4f), CircleShape)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = option.name,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isSelected) extra.cyanGlow else MaterialTheme.colorScheme.onSurface
                         )
                     }
                 }

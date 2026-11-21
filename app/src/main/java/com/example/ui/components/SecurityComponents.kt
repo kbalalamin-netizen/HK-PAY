@@ -39,12 +39,14 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,6 +72,8 @@ import com.example.data.model.AppLanguage
 import com.example.ui.theme.HKPayIcons
 import com.example.ui.theme.JetBrainsMonoFontFamily
 import com.example.ui.theme.LocalHKPayColors
+import com.example.util.BiometricAvailability
+import com.example.util.BiometricHelper
 import com.example.util.HKPayStrings
 import com.example.util.LocationCatalog
 import java.util.Locale
@@ -101,8 +105,10 @@ fun PaymentCardPreview(
 }
 
 /**
- * Unified App Lock screen allowing unlock by either 4-digit PIN OR Biometric authentication
- * (user's choice), without logging out across backgrounding or phone restarts.
+ * Unified App Launch Security Screen powered by androidx.biometric and 4-digit PIN lock.
+ * Automatically triggers BiometricPrompt on launch when biometric unlock is enabled,
+ * displays hardware/enrollment readiness, and supports PIN or Email & Password fallback
+ * without wiping session persistence across app restarts.
  */
 @Composable
 fun AppLockScreen(
@@ -115,7 +121,20 @@ fun AppLockScreen(
     onSignOut: () -> Unit
 ) {
     val extra = LocalHKPayColors.current
+    val context = LocalContext.current
+    val biometricAvailability = remember(context) { BiometricHelper.checkAvailability(context) }
     var pinDigits by remember { mutableStateOf("") }
+    var hasAutoPrompted by remember { mutableStateOf(false) }
+
+    LaunchedEffect(biometricEnabled, biometricAvailability) {
+        if (biometricEnabled &&
+            !hasAutoPrompted &&
+            biometricAvailability == BiometricAvailability.AVAILABLE
+        ) {
+            hasAutoPrompted = true
+            onPromptBiometric()
+        }
+    }
 
     HKPayBackdrop {
         Column(
@@ -160,11 +179,11 @@ fun AppLockScreen(
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = if (pinEnabled && biometricEnabled) {
-                        "Enter your 4-digit PIN or use Biometric unlock to continue."
+                        "Verify with Fingerprint / Face ID or enter your 4-digit security PIN."
                     } else if (pinEnabled) {
                         "Enter your 4-digit security PIN to unlock HK PAY."
                     } else {
-                        "Verify your fingerprint or face biometric to unlock HK PAY."
+                        "Confirm your Fingerprint or Face Unlock to sign in to HK PAY."
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -179,8 +198,42 @@ fun AppLockScreen(
                     )
                 }
 
+                if (biometricEnabled) {
+                    Spacer(Modifier.height(10.dp))
+                    val (bioLabel, bioTint) = when (biometricAvailability) {
+                        BiometricAvailability.AVAILABLE -> "Fingerprint / Face Unlock Ready" to extra.success
+                        BiometricAvailability.NONE_ENROLLED -> "Enroll Fingerprint or Face in Device Settings" to extra.warning
+                        BiometricAvailability.UNAVAILABLE -> "Biometric Sensor Unavailable" to extra.danger
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = bioTint.copy(alpha = 0.14f),
+                        border = BorderStroke(1.dp, bioTint.copy(alpha = 0.45f)),
+                        modifier = Modifier.testTag("applock_biometric_status")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = HKPayIcons.Fingerprint,
+                                contentDescription = null,
+                                tint = bioTint,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = bioLabel,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = bioTint,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+
                 if (pinEnabled) {
-                    Spacer(Modifier.height(22.dp))
+                    Spacer(Modifier.height(20.dp))
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -301,12 +354,56 @@ fun AppLockScreen(
                     }
                 }
             } else {
-                HKPayPrimaryButton(
-                    text = "Unlock with Biometrics",
-                    onClick = onPromptBiometric,
-                    icon = HKPayIcons.Fingerprint,
-                    testTag = "applock_biometric_button"
-                )
+                // Dedicated Biometric Launch Card when biometric-only app lock is active
+                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(86.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    Brush.radialGradient(
+                                        listOf(
+                                            extra.cyanGlow.copy(alpha = 0.28f),
+                                            extra.electricBlue.copy(alpha = 0.12f)
+                                        )
+                                    )
+                                )
+                                .border(1.5.dp, extra.cyanGlow.copy(alpha = 0.7f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = HKPayIcons.Fingerprint,
+                                contentDescription = "Biometric Sensor",
+                                tint = extra.cyanGlow,
+                                modifier = Modifier.size(44.dp)
+                            )
+                        }
+                        Text(
+                            text = "Biometric Vault Protection",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "Tap below to verify with your fingerprint sensor or facial recognition.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                        HKPayPrimaryButton(
+                            text = "Sign In with Fingerprint / Face",
+                            onClick = onPromptBiometric,
+                            enabled = biometricAvailability == BiometricAvailability.AVAILABLE,
+                            icon = HKPayIcons.Fingerprint,
+                            testTag = "applock_biometric_button"
+                        )
+                    }
+                }
             }
 
             Row(
@@ -316,18 +413,19 @@ fun AppLockScreen(
                 if (biometricEnabled && pinEnabled) {
                     OutlinedButton(
                         onClick = onPromptBiometric,
+                        enabled = biometricAvailability == BiometricAvailability.AVAILABLE,
                         modifier = Modifier.testTag("applock_biometric_alt_button")
                     ) {
                         Icon(HKPayIcons.Fingerprint, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Use Biometric")
+                        Text("Use Fingerprint / Face")
                     }
                 }
                 TextButton(
                     onClick = onSignOut,
                     modifier = Modifier.testTag("applock_signout_button")
                 ) {
-                    Text("Sign Out", color = extra.danger)
+                    Text("Sign In with Email & Password", color = extra.danger)
                 }
             }
         }
@@ -520,7 +618,7 @@ fun WorldwideLocationSelector(
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .menuAnchor()
+                        .menuAnchor(MenuAnchorType.PrimaryEditable)
                         .testTag("worldwide_district_input")
                 )
                 ExposedDropdownMenu(
@@ -568,7 +666,7 @@ fun WorldwideLocationSelector(
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .menuAnchor()
+                        .menuAnchor(MenuAnchorType.PrimaryEditable)
                         .testTag("worldwide_upazila_input")
                 )
                 ExposedDropdownMenu(

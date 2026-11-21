@@ -255,6 +255,39 @@ data class CardOrder(
     val timeline: List<OrderStatusEvent> = emptyList()
 )
 
+enum class OrderTrackStage(val label: String, val stepIndex: Int) {
+    PLACED("Placed", 0),
+    PROCESSING("Processing", 1),
+    SHIPPED("Shipped", 2),
+    DELIVERED("Delivered", 3),
+    CANCELLED("Cancelled", -1)
+}
+
+fun CardOrder.resolvedTrackStage(): OrderTrackStage {
+    return when (orderStatus.trim().lowercase()) {
+        "cancelled", "refunded" -> OrderTrackStage.CANCELLED
+        "delivered", "card activation pending", "active" -> OrderTrackStage.DELIVERED
+        "shipped", "in transit" -> OrderTrackStage.SHIPPED
+        "processing",
+        "card processing",
+        "card issued",
+        "kyc pending",
+        "kyc approved",
+        "payment confirmed" -> OrderTrackStage.PROCESSING
+        else -> OrderTrackStage.PLACED
+    }
+}
+
+fun CardOrder.trackingProgressFraction(): Float {
+    return when (resolvedTrackStage()) {
+        OrderTrackStage.PLACED -> 0.25f
+        OrderTrackStage.PROCESSING -> 0.50f
+        OrderTrackStage.SHIPPED -> 0.75f
+        OrderTrackStage.DELIVERED -> 1.0f
+        OrderTrackStage.CANCELLED -> 0f
+    }
+}
+
 data class IssuedCard(
     val cardId: String = "",
     val userId: String = "",

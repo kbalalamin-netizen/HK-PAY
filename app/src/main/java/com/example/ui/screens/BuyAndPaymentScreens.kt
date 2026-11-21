@@ -60,9 +60,9 @@ import com.example.data.model.CardOrder
 import com.example.data.model.CardPackage
 import com.example.data.model.PaymentMethodConfig
 import com.example.data.model.ThemeMode
+import com.example.ui.components.DynamicOrderCardPreview
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.GlassCard
-import com.example.ui.components.HKPayPhysicalCardVisual
 import com.example.ui.components.HKPayPrimaryButton
 import com.example.ui.components.HKPayTopBar
 import com.example.ui.components.SecurityNoticeBanner
@@ -100,8 +100,12 @@ fun BuyCardScreen(
     val extra = LocalHKPayColors.current
     val context = LocalContext.current
     val profile = state.userProfile
-    val designObj = remember(selectedDesign) {
-        HKPayCardDesigns.firstOrNull { it.name.equals(selectedDesign, ignoreCase = true) }
+    var activeDesignName by remember(selectedDesign) {
+        mutableStateOf(selectedDesign.ifBlank { HKPayCardDesigns.first().name })
+    }
+    val designObj = remember(activeDesignName) {
+        HKPayCardDesigns.firstOrNull { it.name.equals(activeDesignName, ignoreCase = true) }
+            ?: HKPayCardDesigns.first()
     }
     var applyReferralCredit by remember(state.availableReferralCredit) {
         mutableStateOf(state.availableReferralCredit > 0.0)
@@ -171,20 +175,15 @@ fun BuyCardScreen(
                         }
                     }
 
-                    HKPayPhysicalCardVisual(
-                        cardName = buildString {
-                            append(cardPackage.name)
-                            if (selectedDesign.isNotBlank()) append(" • $selectedDesign")
-                        },
-                        cardholderName = customerName.ifBlank { "CARDHOLDER NAME" },
+                    DynamicOrderCardPreview(
+                        cardPackageName = cardPackage.name,
                         cardType = cardPackage.cardType,
                         network = cardPackage.network,
-                        maskedOrFullNumber = "••••  ••••  ••••  ••••",
-                        expiryDate = "MM/YY",
-                        statusBadgeText = "Order Preview",
-                        gradientStart = designObj?.let { Color(it.gradientStartHex) },
-                        gradientEnd = designObj?.let { Color(it.gradientEndHex) },
-                        accentColor = designObj?.let { Color(it.accentHex) }
+                        cardholderName = customerName,
+                        countryName = country,
+                        selectedDesign = designObj,
+                        allDesigns = HKPayCardDesigns,
+                        onSelectDesign = { chosen -> activeDesignName = chosen.name }
                     )
 
                     val appliedDiscount = if (applyReferralCredit) {
@@ -196,9 +195,7 @@ fun BuyCardScreen(
                         Text(text = "Price Breakdown", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                         Spacer(Modifier.height(10.dp))
                         PriceLine("Card Package", cardPackage.name)
-                        if (selectedDesign.isNotBlank()) {
-                            PriceLine("Selected Design", selectedDesign)
-                        }
+                        PriceLine("Selected Design", designObj.name)
                         if (cardPackage.usdPackage > 0.0) {
                             PriceLine("USD Package Value", FormatUtils.formatMoney(cardPackage.usdPackage, "USD"))
                         }
@@ -354,7 +351,7 @@ fun BuyCardScreen(
                                         val submitAction = {
                                             onConfirmOrder(
                                                 cardPackage,
-                                                selectedDesign,
+                                                designObj.name,
                                                 applyReferralCredit,
                                                 customerName,
                                                 phoneNumber,

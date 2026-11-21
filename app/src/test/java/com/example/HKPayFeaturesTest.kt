@@ -1,11 +1,15 @@
 package com.example
 
 import com.example.data.model.AppLanguage
+import com.example.data.model.CardOrder
 import com.example.data.model.CardPackage
 import com.example.data.model.HKPayConstants
 import com.example.data.model.IssuedCard
+import com.example.data.model.OrderTrackStage
 import com.example.data.model.ThemeMode
 import com.example.data.model.UserProfile
+import com.example.data.model.resolvedTrackStage
+import com.example.data.model.trackingProgressFraction
 import com.example.data.repository.AuthRepository
 import com.example.notifications.NotificationHelper
 import com.example.ui.screens.HKPayCardDesigns
@@ -157,5 +161,24 @@ class HKPayFeaturesTest {
         assertFalse(state.isCardFrozen(card2))
         assertEquals(1, state.activeCardsCount)
         assertTrue(state.activeSliders.isNotEmpty())
+    }
+
+    @Test
+    fun `cardOrder resolvedTrackStage maps Processing Shipped Delivered and Cancelled accurately`() {
+        assertEquals(OrderTrackStage.PLACED, CardOrder(orderStatus = "Order Placed").resolvedTrackStage())
+        assertEquals(OrderTrackStage.PROCESSING, CardOrder(orderStatus = "Processing").resolvedTrackStage())
+        assertEquals(OrderTrackStage.PROCESSING, CardOrder(orderStatus = "Card Processing").resolvedTrackStage())
+        assertEquals(OrderTrackStage.PROCESSING, CardOrder(orderStatus = "Card Issued").resolvedTrackStage())
+        assertEquals(OrderTrackStage.SHIPPED, CardOrder(orderStatus = "Shipped").resolvedTrackStage())
+        assertEquals(OrderTrackStage.SHIPPED, CardOrder(orderStatus = "In Transit").resolvedTrackStage())
+        assertEquals(OrderTrackStage.DELIVERED, CardOrder(orderStatus = "Delivered").resolvedTrackStage())
+        assertEquals(OrderTrackStage.DELIVERED, CardOrder(orderStatus = "Active").resolvedTrackStage())
+        assertEquals(OrderTrackStage.CANCELLED, CardOrder(orderStatus = "Cancelled").resolvedTrackStage())
+
+        assertEquals(0.25f, CardOrder(orderStatus = "Order Placed").trackingProgressFraction(), 0.001f)
+        assertEquals(0.50f, CardOrder(orderStatus = "Card Processing").trackingProgressFraction(), 0.001f)
+        assertEquals(0.75f, CardOrder(orderStatus = "Shipped").trackingProgressFraction(), 0.001f)
+        assertEquals(1.0f, CardOrder(orderStatus = "Delivered").trackingProgressFraction(), 0.001f)
+        assertEquals(0f, CardOrder(orderStatus = "Cancelled").trackingProgressFraction(), 0.001f)
     }
 }
