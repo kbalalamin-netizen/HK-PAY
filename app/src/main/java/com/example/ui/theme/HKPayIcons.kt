@@ -608,6 +608,104 @@ object HKPayIcons {
 
     val PersonAdd: ImageVector by lazy { GroupAdd }
     val Refresh: ImageVector by lazy { LockReset }
+    val Freeze: ImageVector by lazy {
+        vector("Freeze") {
+            moveTo(22f, 11f); horizontalLineTo(17.83f); lineTo(19.42f, 9.41f)
+            lineTo(18f, 8f); lineTo(15f, 11f); horizontalLineTo(13f); verticalLineTo(9f)
+            lineTo(16f, 6f); lineTo(14.59f, 4.59f); lineTo(13f, 6.17f); verticalLineTo(2f)
+            horizontalLineTo(11f); verticalLineTo(6.17f); lineTo(9.41f, 4.59f)
+            lineTo(8f, 6f); lineTo(11f, 9f); verticalLineTo(11f); horizontalLineTo(9f)
+            lineTo(6f, 8f); lineTo(4.59f, 9.41f); lineTo(6.17f, 11f); horizontalLineTo(2f)
+            verticalLineTo(13f); horizontalLineTo(6.17f); lineTo(4.59f, 14.59f)
+            lineTo(6f, 16f); lineTo(9f, 13f); horizontalLineTo(11f); verticalLineTo(15f)
+            lineTo(8f, 18f); lineTo(9.41f, 19.41f); lineTo(11f, 17.83f); verticalLineTo(22f)
+            horizontalLineTo(13f); verticalLineTo(17.83f); lineTo(14.59f, 19.41f)
+            lineTo(16f, 18f); lineTo(13f, 15f); verticalLineTo(13f); horizontalLineTo(15f)
+            lineTo(18f, 16f); lineTo(19.41f, 14.59f); lineTo(17.83f, 13f); horizontalLineTo(22f); close()
+        }
+    }
+
+    val VerifiedSeal: ImageVector by lazy {
+        vector("VerifiedSeal") {
+            moveTo(23f, 12f); lineTo(20.56f, 9.21f); lineTo(20.9f, 5.52f)
+            lineTo(17.29f, 4.7f); lineTo(15.4f, 1.5f); lineTo(12f, 2.96f)
+            lineTo(8.6f, 1.5f); lineTo(6.71f, 4.69f); lineTo(3.1f, 5.5f)
+            lineTo(3.44f, 9.2f); lineTo(1f, 12f); lineTo(3.44f, 14.79f)
+            lineTo(3.1f, 18.49f); lineTo(6.71f, 19.31f); lineTo(8.6f, 22.5f)
+            lineTo(12f, 21.03f); lineTo(15.4f, 22.49f); lineTo(17.29f, 19.3f)
+            lineTo(20.9f, 18.48f); lineTo(20.56f, 14.79f); close()
+            moveTo(10.09f, 16.72f); lineTo(6.29f, 12.91f); lineTo(7.77f, 11.43f)
+            lineTo(10.09f, 13.76f); lineTo(15.94f, 7.89f); lineTo(17.42f, 9.37f); close()
+        }
+    }
+
+    val PinLock: ImageVector by lazy {
+        vector("PinLock") {
+            moveTo(18f, 8f); horizontalLineTo(17f); verticalLineTo(6f)
+            curveTo(17f, 3.24f, 14.76f, 1f, 12f, 1f); reflectiveCurveTo(7f, 3.24f, 7f, 6f)
+            verticalLineTo(8f); horizontalLineTo(6f); curveTo(4.9f, 8f, 4f, 8.9f, 4f, 10f)
+            verticalLineTo(20f); curveTo(4f, 21.1f, 4.9f, 22f, 6f, 22f); horizontalLineTo(18f)
+            curveTo(19.1f, 22f, 20f, 21.1f, 20f, 20f); verticalLineTo(10f)
+            curveTo(20f, 8.9f, 19.1f, 8f, 18f, 8f); close()
+            moveTo(9f, 6f); curveTo(9f, 4.34f, 10.34f, 3f, 12f, 3f)
+            reflectiveCurveTo(15f, 4.34f, 15f, 6f); verticalLineTo(8f); horizontalLineTo(9f); close()
+            moveTo(12f, 17f); curveTo(10.9f, 17f, 10f, 16.1f, 10f, 15f)
+            reflectiveCurveTo(10.9f, 13f, 12f, 13f); reflectiveCurveTo(14f, 13.9f, 14f, 15f)
+            reflectiveCurveTo(13.1f, 17f, 12f, 17f); close()
+        }
+    }
+
+    val Language: ImageVector by lazy {
+        vector("Language") {
+            moveTo(11.99f, 2f); curveTo(6.47f, 2f, 2f, 6.48f, 2f, 12f)
+            reflectiveCurveTo(6.47f, 22f, 11.99f, 22f); curveTo(17.52f, 22f, 22f, 17.52f, 22f, 12f)
+            reflectiveCurveTo(17.52f, 2f, 11.99f, 2f); close()
+            moveTo(18.92f, 8f); horizontalLineTo(15.97f)
+            curveTo(15.65f, 6.75f, 15.19f, 5.55f, 14.59f, 4.44f)
+            curveTo(16.43f, 5.07f, 17.96f, 6.35f, 18.92f, 8f); close()
+            moveTo(12f, 4.04f); curveTo(12.83f, 5.24f, 13.48f, 6.57f, 13.91f, 8f)
+            horizontalLineTo(10.09f); curveTo(10.52f, 6.57f, 11.17f, 5.24f, 12f, 4.04f); close()
+            moveTo(4.26f, 14f); curveTo(4.1f, 13.36f, 4f, 12.69f, 4f, 12f)
+            reflectiveCurveTo(4.1f, 10.64f, 4.26f, 10f); horizontalLineTo(7.64f)
+            curveTo(7.56f, 10.66f, 7.5f, 11.32f, 7.5f, 12f)
+            reflectiveCurveTo(7.56f, 13.34f, 7.64f, 14f); horizontalLineTo(4.26f); close()
+            moveTo(5.08f, 16f); horizontalLineTo(8.03f)
+            curveTo(8.35f, 17.25f, 8.81f, 18.45f, 9.41f, 19.56f)
+            curveTo(7.57f, 18.93f, 6.04f, 17.65f, 5.08f, 16f); close()
+            moveTo(12f, 19.96f); curveTo(11.17f, 18.76f, 10.52f, 17.43f, 10.09f, 16f)
+            horizontalLineTo(13.91f); curveTo(13.48f, 17.43f, 12.83f, 18.76f, 12f, 19.96f); close()
+            moveTo(14.34f, 14f); horizontalLineTo(9.66f)
+            curveTo(9.57f, 13.34f, 9.5f, 12.68f, 9.5f, 12f)
+            reflectiveCurveTo(9.57f, 10.65f, 9.66f, 10f); horizontalLineTo(14.34f)
+            curveTo(14.43f, 10.65f, 14.5f, 11.32f, 14.5f, 12f)
+            reflectiveCurveTo(14.43f, 13.34f, 14.34f, 14f); close()
+            moveTo(14.59f, 19.56f); curveTo(15.19f, 18.45f, 15.65f, 17.25f, 15.97f, 16f)
+            horizontalLineTo(18.92f); curveTo(17.96f, 17.65f, 16.43f, 18.93f, 14.59f, 19.56f); close()
+            moveTo(16.36f, 14f); curveTo(16.44f, 13.34f, 16.5f, 12.68f, 16.5f, 12f)
+            reflectiveCurveTo(16.44f, 10.66f, 16.36f, 10f); horizontalLineTo(19.74f)
+            curveTo(19.9f, 10.64f, 20f, 11.31f, 20f, 12f)
+            reflectiveCurveTo(19.9f, 13.36f, 19.74f, 14f); horizontalLineTo(16.36f); close()
+        }
+    }
+
+    val Info: ImageVector by lazy {
+        vector("Info") {
+            moveTo(12f, 2f); curveTo(6.48f, 2f, 2f, 6.48f, 2f, 12f)
+            reflectiveCurveTo(6.48f, 22f, 12f, 22f)
+            reflectiveCurveTo(22f, 17.52f, 22f, 12f)
+            reflectiveCurveTo(17.52f, 2f, 12f, 2f); close()
+            moveTo(13f, 17f); horizontalLineTo(11f); verticalLineTo(11f); horizontalLineTo(13f); verticalLineTo(17f); close()
+            moveTo(13f, 9f); horizontalLineTo(11f); verticalLineTo(7f); horizontalLineTo(13f); verticalLineTo(9f); close()
+        }
+    }
+
+    val FlashOn: ImageVector by lazy {
+        vector("FlashOn") {
+            moveTo(7f, 2f); verticalLineTo(13f); horizontalLineTo(10f); verticalLineTo(22f)
+            lineTo(17f, 10f); horizontalLineTo(13f); lineTo(17f, 2f); close()
+        }
+    }
+
     val FaceCheck: ImageVector by lazy {
         vector("FaceCheck") {
             moveTo(9f, 11.75f); curveTo(8.31f, 11.75f, 7.75f, 12.31f, 7.75f, 13f)

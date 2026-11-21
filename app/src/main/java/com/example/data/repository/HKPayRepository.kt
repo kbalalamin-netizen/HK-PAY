@@ -6,6 +6,7 @@ import com.example.data.model.AppSettings
 import com.example.data.model.CardOrder
 import com.example.data.model.CardPackage
 import com.example.data.model.CurrencyRate
+import com.example.data.model.DashboardSlider
 import com.example.data.model.HKPayConstants
 import com.example.data.model.IssuedCard
 import com.example.data.model.KycSubmission
@@ -170,6 +171,13 @@ class HKPayRepository(
             .catch { emit(AppSettings()) }
     }
 
+    fun observeDashboardSliders(): Flow<List<DashboardSlider>> {
+        return database.reference.child("dashboard_sliders")
+            .observeSnapshots()
+            .map { snap -> parseSliders(snap) }
+            .catch { emit(emptyList()) }
+    }
+
     fun observePublicAppConfig(): Flow<AppSettings> {
         val settingsRef = database.reference.child("app_settings")
         return settingsRef.child("maintenanceMode")
@@ -266,6 +274,60 @@ class HKPayRepository(
         runCatching {
             database.reference.child("users").child(uid).child("biometricEnabled").setValue(enabled).awaitResult()
         }
+    }
+
+    suspend fun updateSecuritySettings(
+        uid: String,
+        pinEnabled: Boolean? = null,
+        twoFactorEnabled: Boolean? = null,
+        twoFactorSecret: String? = null
+    ) {
+        if (uid.isBlank()) return
+        val updates = mutableMapOf<String, Any>()
+        if (pinEnabled != null) updates["pinEnabled"] = pinEnabled
+        if (twoFactorEnabled != null) updates["twoFactorEnabled"] = twoFactorEnabled
+        if (twoFactorSecret != null) updates["twoFactorSecret"] = twoFactorSecret
+        if (updates.isEmpty()) return
+        runCatching {
+            database.reference.child("users").child(uid).updateChildren(updates).awaitResult()
+        }
+    }
+
+    suspend fun toggleCardFreeze(
+        uid: String,
+        cardId: String,
+        freeze: Boolean
+    ): Result<Unit> = runCatching {
+        require(uid.isNotBlank() && cardId.isNotBlank()) { "Card information unavailable." }
+        val now = System.currentTimeMillis()
+        database.reference.child("users").child(uid).child("frozenCards").child(cardId)
+            .setValue(freeze).awaitResult()
+
+        // Also update the card node if permitted by RTDB rules
+        runCatching {
+            database.reference.child("cards").child(uid).child(cardId)
+                .child("isFrozen").setValue(freeze).awaitResult()
+        }
+
+        val txId = "TXN-SEC-${now.toString().takeLast(6)}-${UUID.randomUUID().toString().take(4).uppercase(Locale.US)}"
+        runCatching {
+            database.reference.child("transactions").child(uid).child(txId).setValue(
+                mapOf(
+                    "txId" to txId,
+                    "userId" to uid,
+                    "orderId" to "",
+                    "cardId" to cardId,
+                    "txType" to if (freeze) "Card Frozen" else "Card Unfrozen",
+                    "amount" to 0.0,
+                    "fee" to 0.0,
+                    "currency" to "USD",
+                    "status" to "Completed",
+                    "description" to if (freeze) "Card $cardId temporarily frozen by cardholder" else "Card $cardId unfrozen by cardholder",
+                    "createdAt" to now
+                )
+            ).awaitResult()
+        }
+        Unit
     }
 
     suspend fun claimReferralCode(
@@ -828,6 +890,11 @@ class HKPayRepository(
 
     private fun parseUserProfile(uid: String, snap: DataSnapshot): UserProfile {
         val prefsSnap = snap.child("notificationPrefs")
+        val frozenSet = snap.child("frozenCards").children
+            .mapNotNull { c ->
+                val enabled = c.getValue(Boolean::class.java) ?: false
+                if (enabled) c.key else null
+            }.toSet()
         return UserProfile(
             uid = uid,
             publicUserId = snap.stringValue("publicUserId", default = AuthRepository.generatePublicUserId(uid)),
@@ -854,6 +921,10 @@ class HKPayRepository(
             accountStatus = snap.stringValue("accountStatus", default = "Active"),
             fcmToken = snap.stringValue("fcmToken"),
             biometricEnabled = snap.boolValue("biometricEnabled", default = false),
+            pinEnabled = snap.boolValue("pinEnabled", default = false),
+            twoFactorEnabled = snap.boolValue("twoFactorEnabled", default = false),
+            twoFactorSecret = snap.stringValue("twoFactorSecret"),
+            frozenCardIds = frozenSet,
             referralCode = snap.stringValue("referralCode", default = AuthRepository.generateReferralCode(uid)),
             referredBy = snap.stringValue("referredBy"),
             referredByCode = snap.stringValue("referredByCode"),
@@ -966,7 +1037,8 @@ class HKPayRepository(
             providerSecureViewSupported = snap.boolValue("providerSecureViewSupported"),
             hostedCardViewUrl = snap.stringValue("hostedCardViewUrl"),
             providerCardApiUrl = snap.stringValue("providerCardApiUrl"),
-            issuedAt = snap.longValue("issuedAt", "createdAt")
+            issuedAt = snap.longValue("issuedAt", "createdAt"),
+            isFrozen = snap.boolValue("isFrozen", "frozen", default = false)
         )
     }
 
@@ -1044,8 +1116,39 @@ class HKPayRepository(
             supportHours = snap.stringValue("supportHours"),
             bannerTitle = snap.stringValue("bannerTitle"),
             systemNotice = snap.stringValue("systemNotice"),
-            minSupportedVersionCode = snap.longValue("minSupportedVersionCode", default = 1L).toInt()
+            minSupportedVersionCode = snap.longValue("minSupportedVersionCode", default = 1L).toInt(),
+            sliders = parseSliders(snap.child("sliders"))
         )
+    }
+
+    private fun parseSliders(snap: DataSnapshot): List<DashboardSlider> {
+        return snap.children.mapNotNull { item ->
+            val title = item.stringValue("title")
+            if (title.isBlank()) return@mapNotNull null
+            val active = item.boolValue("active", default = true)
+            if (!active) return@mapNotNull null
+            val startHex = item.stringValue("gradientStartHex")
+                .removePrefix("#").removePrefix("0x").toLongOrNull(16)
+                ?.let { if (it <= 0xFFFFFFL) it or 0xFF000000L else it }
+                ?: 0xFF0A2868L
+            val endHex = item.stringValue("gradientEndHex")
+                .removePrefix("#").removePrefix("0x").toLongOrNull(16)
+                ?.let { if (it <= 0xFFFFFFL) it or 0xFF000000L else it }
+                ?: 0xFF030B29L
+            DashboardSlider(
+                id = item.stringValue("id", default = item.key.orEmpty()),
+                title = title,
+                subtitle = item.stringValue("subtitle", "description"),
+                badge = item.stringValue("badge", default = "HK PAY"),
+                ctaLabel = item.stringValue("ctaLabel", default = "Explore"),
+                actionRoute = item.stringValue("actionRoute", default = "store"),
+                imageUrl = item.stringValue("imageUrl"),
+                gradientStartHex = startHex,
+                gradientEndHex = endHex,
+                order = item.longValue("order", default = 0L).toInt(),
+                active = true
+            )
+        }.sortedBy { it.order }
     }
 
     private fun parseTransaction(uid: String, snap: DataSnapshot): TransactionRecord? {

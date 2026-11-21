@@ -90,6 +90,7 @@ fun KycScreen(
     state: MainDashboardState,
     themeMode: ThemeMode,
     onToggleTheme: () -> Unit,
+    onBeforeExternalPicker: () -> Unit = {},
     onBack: () -> Unit,
     onSubmitKyc: (
         fullName: String,
@@ -104,7 +105,6 @@ fun KycScreen(
     ) -> Unit
 ) {
     val extra = LocalHKPayColors.current
-    val context = LocalContext.current
     val kyc = state.kycSubmission
     val effectiveStatus = state.effectiveKycStatus
 
@@ -125,11 +125,16 @@ fun KycScreen(
     var backUri by remember { mutableStateOf<Uri?>(null) }
     var selfieUri by remember { mutableStateOf<Uri?>(null) }
     var challengeIdx by remember { mutableIntStateOf(0) }
-    var pendingCaptureUri by remember { mutableStateOf<Uri?>(null) }
+    var livenessSummary by remember { mutableStateOf(kyc.livenessChallenge) }
     var showDatePicker by remember { mutableStateOf(false) }
+    var showFrontScanner by remember { mutableStateOf(false) }
+    var showBackScanner by remember { mutableStateOf(false) }
+    var showFaceLiveness by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
 
-    val activeChallenge = kyc.livenessChallenge.ifBlank { KYC_LIVENESS_PROMPTS[challengeIdx % KYC_LIVENESS_PROMPTS.size] }
+    val activeChallenge = livenessSummary.ifBlank {
+        kyc.livenessChallenge.ifBlank { KYC_LIVENESS_PROMPTS[challengeIdx % KYC_LIVENESS_PROMPTS.size] }
+    }
 
     val frontPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) frontUri = uri
@@ -140,19 +145,46 @@ fun KycScreen(
     val selfiePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) selfieUri = uri
     }
-    val selfieCameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
-        if (saved && pendingCaptureUri != null) {
-            selfieUri = pendingCaptureUri
-            errorText = null
-        }
+
+    if (showFrontScanner) {
+        LiveDocumentScanDialog(
+            title = "Live Scan $docType Front",
+            subtitle = "Position the front side inside the glowing frame.",
+            onBeforeExternalPicker = onBeforeExternalPicker,
+            onCaptured = { uri ->
+                frontUri = uri
+                showFrontScanner = false
+                errorText = null
+            },
+            onDismiss = { showFrontScanner = false }
+        )
     }
 
-    fun launchLiveSelfie() {
-        val dir = File(context.cacheDir, "liveness").apply { mkdirs() }
-        val file = File(dir, "kyc_liveness_${System.currentTimeMillis()}.jpg")
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-        pendingCaptureUri = uri
-        selfieCameraLauncher.launch(uri)
+    if (showBackScanner) {
+        LiveDocumentScanDialog(
+            title = "Live Scan $docType Back",
+            subtitle = "Position the back side inside the glowing frame.",
+            onBeforeExternalPicker = onBeforeExternalPicker,
+            onCaptured = { uri ->
+                backUri = uri
+                showBackScanner = false
+                errorText = null
+            },
+            onDismiss = { showBackScanner = false }
+        )
+    }
+
+    if (showFaceLiveness) {
+        LiveFaceLivenessDialog(
+            livenessChallenge = activeChallenge,
+            onCompleted = { uri, challengeSummary ->
+                selfieUri = uri
+                livenessSummary = challengeSummary
+                showFaceLiveness = false
+                errorText = null
+            },
+            onDismiss = { showFaceLiveness = false }
+        )
     }
 
     if (showDatePicker) {
@@ -325,8 +357,13 @@ fun KycScreen(
                         selectedUri = frontUri,
                         existingUrl = kyc.frontDocumentUrl,
                         enabled = canEdit,
+                        icon = HKPayIcons.CameraAlt,
                         onPick = {
-                            frontPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            if (canEdit) showFrontScanner = true
+                            else {
+                                onBeforeExternalPicker()
+                                frontPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            }
                         },
                         testTag = "kyc_upload_front_button"
                     )
@@ -336,8 +373,13 @@ fun KycScreen(
                         selectedUri = backUri,
                         existingUrl = kyc.backDocumentUrl,
                         enabled = canEdit,
+                        icon = HKPayIcons.CameraAlt,
                         onPick = {
-                            backPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            if (canEdit) showBackScanner = true
+                            else {
+                                onBeforeExternalPicker()
+                                backPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            }
                         },
                         testTag = "kyc_upload_back_button"
                     )
@@ -381,7 +423,7 @@ fun KycScreen(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             OutlinedButton(
-                                onClick = ::launchLiveSelfie,
+                                onClick = { showFaceLiveness = true },
                                 enabled = canEdit,
                                 modifier = Modifier
                                     .weight(1f)
@@ -389,12 +431,13 @@ fun KycScreen(
                                     .testTag("kyc_live_selfie_camera_button"),
                                 shape = RoundedCornerShape(14.dp)
                             ) {
-                                Icon(HKPayIcons.CameraAlt, contentDescription = null)
+                                Icon(HKPayIcons.FaceCheck, contentDescription = null)
                                 Spacer(Modifier.width(6.dp))
-                                Text("Live Camera")
+                                Text("Live Liveness")
                             }
                             OutlinedButton(
                                 onClick = {
+                                    onBeforeExternalPicker()
                                     selfiePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                                 },
                                 enabled = canEdit,
@@ -404,7 +447,7 @@ fun KycScreen(
                                     .testTag("kyc_upload_selfie_button"),
                                 shape = RoundedCornerShape(14.dp)
                             ) {
-                                Icon(HKPayIcons.CameraFront, contentDescription = null)
+                                Icon(HKPayIcons.UploadFile, contentDescription = null)
                                 Spacer(Modifier.width(6.dp))
                                 Text("Photo Picker")
                             }

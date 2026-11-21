@@ -67,6 +67,7 @@ import com.example.ui.components.HKPayPrimaryButton
 import com.example.ui.components.HKPayTopBar
 import com.example.ui.components.SecurityNoticeBanner
 import com.example.ui.components.StatusBadge
+import com.example.ui.components.WorldwideLocationSelector
 import com.example.ui.theme.HKPayIcons
 import com.example.ui.theme.LocalHKPayColors
 import com.example.ui.viewmodel.MainDashboardState
@@ -283,44 +284,24 @@ fun BuyCardScreen(
                             shape = RoundedCornerShape(14.dp)
                         )
                         Spacer(Modifier.height(10.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            OutlinedTextField(
-                                value = country,
-                                onValueChange = { country = it },
-                                label = { Text("Country") },
-                                singleLine = true,
-                                modifier = Modifier.weight(1f).testTag("buy_country_input"),
-                                shape = RoundedCornerShape(14.dp)
-                            )
-                            OutlinedTextField(
-                                value = district,
-                                onValueChange = { district = it },
-                                label = { Text("District / State") },
-                                singleLine = true,
-                                modifier = Modifier.weight(1f).testTag("buy_district_input"),
-                                shape = RoundedCornerShape(14.dp)
-                            )
-                        }
+                        WorldwideLocationSelector(
+                            country = country,
+                            district = district,
+                            cityUpazila = cityUpazila,
+                            onCountrySelected = { country = it },
+                            onDistrictChanged = { district = it },
+                            onCityUpazilaChanged = { cityUpazila = it }
+                        )
                         Spacer(Modifier.height(10.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            OutlinedTextField(
-                                value = cityUpazila,
-                                onValueChange = { cityUpazila = it },
-                                label = { Text("City / Upazila") },
-                                singleLine = true,
-                                modifier = Modifier.weight(1f).testTag("buy_city_input"),
-                                shape = RoundedCornerShape(14.dp)
-                            )
-                            OutlinedTextField(
-                                value = postalCode,
-                                onValueChange = { postalCode = it },
-                                label = { Text("Postal Code") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                singleLine = true,
-                                modifier = Modifier.weight(1f).testTag("buy_postal_input"),
-                                shape = RoundedCornerShape(14.dp)
-                            )
-                        }
+                        OutlinedTextField(
+                            value = postalCode,
+                            onValueChange = { postalCode = it },
+                            label = { Text("Postal Code") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("buy_postal_input"),
+                            shape = RoundedCornerShape(14.dp)
+                        )
                         Spacer(Modifier.height(10.dp))
                         OutlinedTextField(
                             value = address,
@@ -419,6 +400,7 @@ fun PaymentScreen(
     themeMode: ThemeMode,
     biometricEnabled: Boolean,
     onToggleTheme: () -> Unit,
+    onBeforeExternalPicker: () -> Unit = {},
     onBack: () -> Unit,
     onSubmitPayment: (
         order: CardOrder,
@@ -636,6 +618,7 @@ fun PaymentScreen(
 
                         OutlinedButton(
                             onClick = {
+                                onBeforeExternalPicker()
                                 proofPicker.launch(
                                     PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                 )

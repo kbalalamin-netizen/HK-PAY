@@ -1,11 +1,6 @@
 package com.example.ui.navigation
 
-import android.Manifest
-import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -60,7 +55,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hasRoute
@@ -70,12 +64,16 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import com.example.data.model.AppLanguage
 import com.example.data.model.AppSettings
 import com.example.data.model.ThemeMode
+import com.example.ui.components.AppLockScreen
 import com.example.ui.components.GlassCard
 import com.example.ui.components.HKPayBackdrop
+import com.example.ui.components.LanguageSelectorDialog
+import com.example.ui.components.PermissionStepDialog
 import com.example.ui.components.ThemeCycleIconButton
-import com.example.ui.screens.BiometricLockScreen
+import com.example.ui.screens.AboutScreen
 import com.example.ui.screens.BuyCardScreen
 import com.example.ui.screens.CardSelectionScreen
 import com.example.ui.screens.CardStoreScreen
@@ -91,6 +89,8 @@ import com.example.ui.screens.NotificationsScreen
 import com.example.ui.screens.OrderDetailScreen
 import com.example.ui.screens.OrdersScreen
 import com.example.ui.screens.PaymentScreen
+import com.example.ui.screens.PinLockSettingsScreen
+import com.example.ui.screens.PrivacyPolicyScreen
 import com.example.ui.screens.ProfileScreen
 import com.example.ui.screens.ReferralScreen
 import com.example.ui.screens.SignInScreen
@@ -98,8 +98,10 @@ import com.example.ui.screens.SignUpScreen
 import com.example.ui.screens.SplashScreen
 import com.example.ui.screens.SupportDetailScreen
 import com.example.ui.screens.SupportScreen
+import com.example.ui.screens.TermsScreen
 import com.example.ui.screens.TransactionHistoryScreen
 import com.example.ui.screens.TutorialsScreen
+import com.example.ui.screens.TwoFactorSetupScreen
 import com.example.ui.screens.WelcomeScreen
 import com.example.ui.theme.HKPayIcons
 import com.example.ui.theme.LocalHKPayColors
@@ -108,6 +110,7 @@ import com.example.ui.viewmodel.AuthViewModel
 import com.example.ui.viewmodel.MainViewModel
 import com.example.ui.viewmodel.UiEvent
 import com.example.util.BiometricHelper
+import com.example.util.HKPayStrings
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
@@ -139,21 +142,26 @@ import kotlinx.serialization.Serializable
 @Serializable object NotificationSettingsRoute
 @Serializable object TutorialsRoute
 @Serializable object ReferralRoute
+@Serializable object PinLockSettingsRoute
+@Serializable object TwoFactorRoute
+@Serializable object PrivacyPolicyRoute
+@Serializable object TermsRoute
+@Serializable object AboutRoute
 
 private data class TopLevelDestination(
     val route: Any,
-    val label: String,
+    val labelProvider: (AppLanguage) -> String,
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector,
     val testTag: String
 )
 
 private val TopLevelDestinations = listOf(
-    TopLevelDestination(HomeRoute, "Home", Icons.Rounded.Home, Icons.Outlined.Home, "nav_home"),
-    TopLevelDestination(CardsRoute, "Cards", HKPayIcons.CreditCard, HKPayIcons.CreditCard, "nav_cards"),
-    TopLevelDestination(BuyStoreRoute, "Buy", HKPayIcons.AddCard, HKPayIcons.AddCard, "nav_buy"),
-    TopLevelDestination(OrdersRoute, "Orders", HKPayIcons.LocalShipping, HKPayIcons.LocalShipping, "nav_orders"),
-    TopLevelDestination(ProfileRoute, "Profile", Icons.Rounded.Person, Icons.Outlined.Person, "nav_profile")
+    TopLevelDestination(HomeRoute, HKPayStrings::navHome, Icons.Rounded.Home, Icons.Outlined.Home, "nav_home"),
+    TopLevelDestination(CardsRoute, HKPayStrings::navCards, HKPayIcons.CreditCard, HKPayIcons.CreditCard, "nav_cards"),
+    TopLevelDestination(BuyStoreRoute, HKPayStrings::navBuy, HKPayIcons.AddCard, HKPayIcons.AddCard, "nav_buy"),
+    TopLevelDestination(OrdersRoute, HKPayStrings::navOrders, HKPayIcons.LocalShipping, HKPayIcons.LocalShipping, "nav_orders"),
+    TopLevelDestination(ProfileRoute, HKPayStrings::navProfile, Icons.Rounded.Person, Icons.Outlined.Person, "nav_profile")
 )
 
 @Composable
@@ -167,8 +175,11 @@ fun HKPayAppRoot(
     val sessionState by authViewModel.sessionState.collectAsStateWithLifecycle()
     val authUiState by authViewModel.uiState.collectAsStateWithLifecycle()
     val publicConfig by authViewModel.publicConfig.collectAsStateWithLifecycle()
+    val appLanguage by mainViewModel.appLanguage.collectAsStateWithLifecycle()
     val biometricEnabled by mainViewModel.biometricEnabled.collectAsStateWithLifecycle()
-    val isBiometricUnlocked by mainViewModel.isBiometricUnlockedThisSession.collectAsStateWithLifecycle()
+    val pinLockEnabled by mainViewModel.pinLockEnabled.collectAsStateWithLifecycle()
+    val isUnlockedThisSession by mainViewModel.isBiometricUnlockedThisSession.collectAsStateWithLifecycle()
+    val pinUnlockError by mainViewModel.pinUnlockError.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var biometricError by remember { mutableStateOf<String?>(null) }
 
@@ -193,6 +204,7 @@ fun HKPayAppRoot(
                     themeMode = themeMode,
                     onToggleTheme = mainViewModel::cycleThemeMode,
                     onSignIn = authViewModel::signIn,
+                    onSignInWithPin = authViewModel::verifyEmailPinForSignIn,
                     onSignUp = authViewModel::signUp,
                     onForgotPassword = authViewModel::sendPasswordReset,
                     onClearMessages = authViewModel::clearMessages
@@ -217,31 +229,41 @@ fun HKPayAppRoot(
                 mainViewModel.bindUser(session.user.uid)
             }
 
-            if (biometricEnabled && !isBiometricUnlocked) {
-                BiometricLockScreen(
+            val isLockRequired = (pinLockEnabled || biometricEnabled) && !isUnlockedThisSession
+            if (isLockRequired) {
+                val promptBiometricAction = {
+                    val activity = context as? FragmentActivity
+                    if (activity != null) {
+                        biometricError = null
+                        mainViewModel.clearPinUnlockError()
+                        BiometricHelper.authenticate(
+                            activity = activity,
+                            title = "HK PAY Security Unlock",
+                            subtitle = "Verify your fingerprint or face ID to unlock HK PAY",
+                            negativeButtonText = if (pinLockEnabled) "Use 4-Digit PIN" else "Cancel",
+                            onSuccess = {
+                                biometricError = null
+                                mainViewModel.unlockBiometrically()
+                            },
+                            onNegativeAction = { /* stay on PIN keypad */ },
+                            onError = { msg -> biometricError = msg }
+                        )
+                    } else {
+                        biometricError = "Biometric prompt is unavailable in this view."
+                    }
+                }
+
+                AppLockScreen(
                     userEmail = session.user.email.orEmpty(),
-                    errorMessage = biometricError,
-                    onPromptBiometric = {
-                        val activity = context as? FragmentActivity
-                        if (activity != null) {
-                            biometricError = null
-                            BiometricHelper.authenticate(
-                                activity = activity,
-                                title = "HK PAY Biometric Unlock",
-                                subtitle = "Verify your fingerprint or face ID to continue",
-                                negativeButtonText = "Use Email & Password",
-                                onSuccess = { mainViewModel.unlockBiometrically() },
-                                onNegativeAction = {
-                                    mainViewModel.clearSession()
-                                    authViewModel.signOut()
-                                },
-                                onError = { msg -> biometricError = msg }
-                            )
-                        } else {
-                            biometricError = "Biometric prompt is unavailable in this view."
-                        }
+                    pinEnabled = pinLockEnabled,
+                    biometricEnabled = biometricEnabled,
+                    errorMessage = pinUnlockError ?: biometricError,
+                    onUnlockWithPin = { pin ->
+                        biometricError = null
+                        mainViewModel.unlockWithPin(pin)
                     },
-                    onUsePasswordInstead = {
+                    onPromptBiometric = promptBiometricAction,
+                    onSignOut = {
                         mainViewModel.clearSession()
                         authViewModel.signOut()
                     }
@@ -250,6 +272,7 @@ fun HKPayAppRoot(
                 MainAuthenticatedHost(
                     mainViewModel = mainViewModel,
                     themeMode = themeMode,
+                    appLanguage = appLanguage,
                     biometricEnabled = biometricEnabled,
                     pendingOrderId = pendingOrderId,
                     onConsumePendingOrderId = onConsumePendingOrderId,
@@ -341,7 +364,7 @@ private fun MaintenanceShieldScreen(
                             onClick = onSignOut,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Sign Out")
+                            Text("Session Logout")
                         }
                     }
                 }
@@ -358,6 +381,7 @@ private fun AuthFlowHost(
     themeMode: ThemeMode,
     onToggleTheme: () -> Unit,
     onSignIn: (String, String) -> Unit,
+    onSignInWithPin: (String, String) -> Unit,
     onSignUp: (
         fullName: String,
         email: String,
@@ -369,7 +393,13 @@ private fun AuthFlowHost(
         nidBackUri: Uri?,
         livenessUri: Uri?,
         livenessChallenge: String,
-        referralCode: String
+        referralCode: String,
+        country: String,
+        district: String,
+        cityUpazila: String,
+        appPin: String,
+        confirmAppPin: String,
+        enableBiometric: Boolean
     ) -> Unit,
     onForgotPassword: (String) -> Unit,
     onClearMessages: () -> Unit
@@ -400,6 +430,7 @@ private fun AuthFlowHost(
                 themeMode = themeMode,
                 onToggleTheme = onToggleTheme,
                 onSignIn = onSignIn,
+                onSignInWithPin = onSignInWithPin,
                 onForgotPassword = {
                     onClearMessages()
                     navController.navigate(ForgotPasswordRoute)
@@ -441,6 +472,7 @@ private fun AuthFlowHost(
 private fun MainAuthenticatedHost(
     mainViewModel: MainViewModel,
     themeMode: ThemeMode,
+    appLanguage: AppLanguage,
     biometricEnabled: Boolean,
     pendingOrderId: String?,
     onConsumePendingOrderId: () -> Unit,
@@ -449,27 +481,47 @@ private fun MainAuthenticatedHost(
     val state by mainViewModel.state.collectAsStateWithLifecycle()
     val balanceVisible by mainViewModel.balanceVisible.collectAsStateWithLifecycle()
     val tutorialCompleted by mainViewModel.tutorialCompleted.collectAsStateWithLifecycle()
+    val pinLockEnabled by mainViewModel.pinLockEnabled.collectAsStateWithLifecycle()
+    val twoFactorEnabled by mainViewModel.twoFactorEnabled.collectAsStateWithLifecycle()
+    val twoFactorSecret by mainViewModel.twoFactorSecret.collectAsStateWithLifecycle()
+    val permissionsWizardDone by mainViewModel.permissionsWizardDone.collectAsStateWithLifecycle()
+    val isCardManagementVerified by mainViewModel.isCardManagementVerified.collectAsStateWithLifecycle()
+
     val navController = rememberNavController()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val extra = LocalHKPayColors.current
-    val context = LocalContext.current
 
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-        onResult = { }
-    )
+    var showLanguagePicker by remember { mutableStateOf(false) }
+    var manualPermissionsWizardOpen by remember { mutableStateOf(false) }
+    var dismissedAutoPermissionsWizard by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val granted = ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.POST_NOTIFICATIONS
-            ) == PackageManager.PERMISSION_GRANTED
-            if (!granted) {
-                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    if (showLanguagePicker) {
+        LanguageSelectorDialog(
+            currentLanguage = appLanguage,
+            onSelectLanguage = { lang -> mainViewModel.setAppLanguage(lang) },
+            onDismiss = { showLanguagePicker = false }
+        )
+    }
+
+    val shouldShowPermissionsWizard = manualPermissionsWizardOpen ||
+        (!permissionsWizardDone && !dismissedAutoPermissionsWizard)
+
+    if (shouldShowPermissionsWizard) {
+        PermissionStepDialog(
+            onBeforeSystemPrompt = mainViewModel::suppressNextBackgroundLock,
+            onCompleted = {
+                mainViewModel.setPermissionsWizardDone(true)
+                manualPermissionsWizardOpen = false
+                dismissedAutoPermissionsWizard = true
+                scope.launch { snackbarHostState.showSnackbar("Permissions configured.") }
+            },
+            onDismiss = {
+                mainViewModel.setPermissionsWizardDone(true)
+                manualPermissionsWizardOpen = false
+                dismissedAutoPermissionsWizard = true
             }
-        }
+        )
     }
 
     LaunchedEffect(pendingOrderId) {
@@ -509,6 +561,7 @@ private fun MainAuthenticatedHost(
                     snackbarHostState.showSnackbar("Profile updated")
                     navController.popBackStack()
                 }
+                is UiEvent.PinUpdated -> Unit
             }
         }
     }
@@ -539,6 +592,22 @@ private fun MainAuthenticatedHost(
         }
     }
 
+    fun navigateSliderAction(actionRoute: String) {
+        when (actionRoute.lowercase()) {
+            "cards" -> navigateTopLevel(CardsRoute)
+            "orders" -> navigateTopLevel(OrdersRoute)
+            "profile" -> navigateTopLevel(ProfileRoute)
+            "kyc" -> navController.navigate(KycRoute)
+            "referrals" -> navController.navigate(ReferralRoute)
+            "rates" -> navController.navigate(CurrencyRatesRoute)
+            "support" -> navController.navigate(SupportRoute)
+            "transactions" -> navController.navigate(TransactionsRoute)
+            "tutorials" -> navController.navigate(TutorialsRoute)
+            "designs" -> navController.navigate(CardSelectionRoute())
+            else -> navigateTopLevel(BuyStoreRoute)
+        }
+    }
+
     fun showMessage(message: String) {
         scope.launch { snackbarHostState.showSnackbar(message) }
     }
@@ -560,16 +629,17 @@ private fun MainAuthenticatedHost(
                         ) {
                             TopLevelDestinations.forEach { dest ->
                                 val selected = currentDestination?.hasRoute(dest.route::class) == true
+                                val labelText = dest.labelProvider(appLanguage)
                                 NavigationBarItem(
                                     selected = selected,
                                     onClick = { navigateTopLevel(dest.route) },
                                     icon = {
                                         Icon(
                                             imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
-                                            contentDescription = dest.label
+                                            contentDescription = labelText
                                         )
                                     },
-                                    label = { Text(dest.label, style = MaterialTheme.typography.labelMedium) },
+                                    label = { Text(labelText, style = MaterialTheme.typography.labelMedium) },
                                     colors = NavigationBarItemDefaults.colors(
                                         selectedIconColor = extra.cyanGlow,
                                         selectedTextColor = extra.cyanGlow,
@@ -596,16 +666,17 @@ private fun MainAuthenticatedHost(
                         ) {
                             TopLevelDestinations.forEach { dest ->
                                 val selected = currentDestination?.hasRoute(dest.route::class) == true
+                                val labelText = dest.labelProvider(appLanguage)
                                 NavigationRailItem(
                                     selected = selected,
                                     onClick = { navigateTopLevel(dest.route) },
                                     icon = {
                                         Icon(
                                             imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
-                                            contentDescription = dest.label
+                                            contentDescription = labelText
                                         )
                                     },
-                                    label = { Text(dest.label) },
+                                    label = { Text(labelText) },
                                     colors = NavigationRailItemDefaults.colors(
                                         selectedIconColor = extra.cyanGlow,
                                         selectedTextColor = extra.cyanGlow,
@@ -628,10 +699,13 @@ private fun MainAuthenticatedHost(
                                 DashboardScreen(
                                     state = state,
                                     themeMode = themeMode,
+                                    appLanguage = appLanguage,
                                     balanceVisible = balanceVisible,
                                     tutorialCompleted = tutorialCompleted,
                                     onToggleTheme = mainViewModel::cycleThemeMode,
+                                    onOpenLanguagePicker = { showLanguagePicker = true },
                                     onToggleBalanceVisible = mainViewModel::toggleBalanceVisibility,
+                                    onNavigateRoute = ::navigateSliderAction,
                                     onNavigateBuyCard = { navigateTopLevel(BuyStoreRoute) },
                                     onNavigateCardSelection = { navController.navigate(CardSelectionRoute()) },
                                     onNavigateMyCards = { navigateTopLevel(CardsRoute) },
@@ -655,8 +729,13 @@ private fun MainAuthenticatedHost(
                                     themeMode = themeMode,
                                     balanceVisible = balanceVisible,
                                     biometricEnabled = biometricEnabled,
+                                    isCardManagementVerified = isCardManagementVerified,
+                                    twoFactorEnabled = twoFactorEnabled,
                                     onToggleTheme = mainViewModel::cycleThemeMode,
+                                    onMarkCardManagementVerified = mainViewModel::markCardManagementVerified,
+                                    onToggleCardFreeze = mainViewModel::toggleCardFreeze,
                                     onRevealToggle = mainViewModel::toggleCardSensitiveData,
+                                    verifyTwoFactorCode = mainViewModel::verifyTwoFactorCode,
                                     onNavigateStore = { navigateTopLevel(BuyStoreRoute) },
                                     onCopied = ::showMessage
                                 )
@@ -704,13 +783,24 @@ private fun MainAuthenticatedHost(
                                 ProfileScreen(
                                     state = state,
                                     themeMode = themeMode,
+                                    appLanguage = appLanguage,
                                     biometricEnabled = biometricEnabled,
+                                    pinLockEnabled = pinLockEnabled,
+                                    twoFactorEnabled = twoFactorEnabled,
                                     onChangeTheme = mainViewModel::setThemeMode,
                                     onToggleTheme = mainViewModel::cycleThemeMode,
+                                    onOpenLanguagePicker = { showLanguagePicker = true },
                                     onToggleBiometric = mainViewModel::setBiometricEnabled,
                                     onUploadPhoto = mainViewModel::uploadProfilePhoto,
+                                    onBeforeExternalPicker = mainViewModel::suppressNextBackgroundLock,
                                     onEditProfile = { navController.navigate(EditProfileRoute) },
                                     onChangePassword = mainViewModel::changePassword,
+                                    onNavigatePinSettings = { navController.navigate(PinLockSettingsRoute) },
+                                    onNavigateTwoFactor = { navController.navigate(TwoFactorRoute) },
+                                    onOpenPermissionsWizard = { manualPermissionsWizardOpen = true },
+                                    onNavigatePrivacyPolicy = { navController.navigate(PrivacyPolicyRoute) },
+                                    onNavigateTerms = { navController.navigate(TermsRoute) },
+                                    onNavigateAbout = { navController.navigate(AboutRoute) },
                                     onNavigateKyc = { navController.navigate(KycRoute) },
                                     onNavigateReferrals = { navController.navigate(ReferralRoute) },
                                     onNavigateTutorials = { navController.navigate(TutorialsRoute) },
@@ -747,6 +837,7 @@ private fun MainAuthenticatedHost(
                                     themeMode = themeMode,
                                     biometricEnabled = biometricEnabled,
                                     onToggleTheme = mainViewModel::cycleThemeMode,
+                                    onBeforeExternalPicker = mainViewModel::suppressNextBackgroundLock,
                                     onBack = { navController.popBackStack() },
                                     onSubmitPayment = mainViewModel::submitPayment,
                                     onCopied = ::showMessage
@@ -771,6 +862,7 @@ private fun MainAuthenticatedHost(
                                     state = state,
                                     themeMode = themeMode,
                                     onToggleTheme = mainViewModel::cycleThemeMode,
+                                    onBeforeExternalPicker = mainViewModel::suppressNextBackgroundLock,
                                     onBack = { navController.popBackStack() },
                                     onSubmitKyc = mainViewModel::submitKyc
                                 )
@@ -836,6 +928,7 @@ private fun MainAuthenticatedHost(
                                     themeMode = themeMode,
                                     onToggleTheme = mainViewModel::cycleThemeMode,
                                     onUploadPhoto = mainViewModel::uploadProfilePhoto,
+                                    onBeforeExternalPicker = mainViewModel::suppressNextBackgroundLock,
                                     onBack = { navController.popBackStack() },
                                     onSave = mainViewModel::updateProfile
                                 )
@@ -879,6 +972,59 @@ private fun MainAuthenticatedHost(
                                     onBack = { navController.popBackStack() },
                                     onClaimCode = mainViewModel::claimReferralCode,
                                     onCopied = ::showMessage
+                                )
+                            }
+
+                            composable<PinLockSettingsRoute> {
+                                PinLockSettingsScreen(
+                                    pinLockEnabled = pinLockEnabled,
+                                    biometricEnabled = biometricEnabled,
+                                    themeMode = themeMode,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
+                                    onSaveOrChangePin = mainViewModel::setupOrChangePin,
+                                    onDisablePinLock = mainViewModel::disablePinLock,
+                                    onToggleBiometric = mainViewModel::setBiometricEnabled,
+                                    onShowMessage = ::showMessage,
+                                    onBack = { navController.popBackStack() }
+                                )
+                            }
+
+                            composable<TwoFactorRoute> {
+                                TwoFactorSetupScreen(
+                                    userEmail = state.userProfile.email,
+                                    twoFactorEnabled = twoFactorEnabled,
+                                    savedSecret = twoFactorSecret,
+                                    themeMode = themeMode,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
+                                    onEnableTwoFactor = mainViewModel::enableTwoFactor,
+                                    onDisableTwoFactor = mainViewModel::disableTwoFactor,
+                                    onShowMessage = ::showMessage,
+                                    onBack = { navController.popBackStack() }
+                                )
+                            }
+
+                            composable<PrivacyPolicyRoute> {
+                                PrivacyPolicyScreen(
+                                    themeMode = themeMode,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
+                                    onBack = { navController.popBackStack() }
+                                )
+                            }
+
+                            composable<TermsRoute> {
+                                TermsScreen(
+                                    themeMode = themeMode,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
+                                    onBack = { navController.popBackStack() }
+                                )
+                            }
+
+                            composable<AboutRoute> {
+                                AboutScreen(
+                                    supportEmail = state.appSettings.supportEmail,
+                                    themeMode = themeMode,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
+                                    onBack = { navController.popBackStack() }
                                 )
                             }
                         }

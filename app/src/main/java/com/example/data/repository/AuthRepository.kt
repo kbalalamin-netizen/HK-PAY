@@ -46,7 +46,12 @@ class AuthRepository(
         livenessUri: Uri? = null,
         livenessChallenge: String = "",
         referralCodeInput: String = "",
-        referralBonusUsd: Double = REFERRAL_BONUS_USD
+        referralBonusUsd: Double = REFERRAL_BONUS_USD,
+        country: String = "Bangladesh",
+        district: String = "",
+        cityUpazila: String = "",
+        pinEnabled: Boolean = false,
+        biometricEnabled: Boolean = false
     ): Result<FirebaseUser> = runCatching {
         val cleanName = fullName.trim()
         val cleanEmail = email.trim()
@@ -115,7 +120,9 @@ class AuthRepository(
             "fullName" to cleanName,
             "email" to cleanEmail,
             "phone" to cleanPhone,
-            "country" to "Bangladesh",
+            "country" to country.trim().ifBlank { "Bangladesh" },
+            "district" to district.trim(),
+            "cityUpazila" to cityUpazila.trim(),
             "nidNumber" to cleanNid,
             "livenessVerified" to hasLiveness,
             "livenessChallenge" to livenessChallenge,
@@ -125,7 +132,10 @@ class AuthRepository(
             "joinDate" to now,
             "kycStatus" to initialKycStatus,
             "accountStatus" to "Active",
-            "biometricEnabled" to false,
+            "biometricEnabled" to biometricEnabled,
+            "pinEnabled" to pinEnabled,
+            "twoFactorEnabled" to false,
+            "twoFactorSecret" to "",
             "referralCode" to ownReferralCode,
             "referredBy" to if (hasValidReferral) referrerUid else "",
             "referredByCode" to if (hasValidReferral) cleanRefCode else "",
@@ -177,7 +187,7 @@ class AuthRepository(
                         "userId" to user.uid,
                         "fullName" to cleanName,
                         "dateOfBirth" to "",
-                        "country" to "Bangladesh",
+                        "country" to country.trim().ifBlank { "Bangladesh" },
                         "documentType" to "NID",
                         "documentNumber" to cleanNid,
                         "frontDocumentUrl" to frontUrl,

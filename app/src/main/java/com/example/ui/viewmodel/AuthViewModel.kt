@@ -1,12 +1,15 @@
 package com.example.ui.viewmodel
 
+import android.app.Application
 import android.net.Uri
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.model.AppSettings
 import com.example.data.repository.AuthRepository
 import com.example.data.repository.HKPayRepository
+import com.example.data.repository.ThemePreferencesRepository
 import com.example.util.FormatUtils
+import com.example.util.SecurityUtils
 import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthInvalidUserException
@@ -31,13 +34,15 @@ data class AuthUiState(
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val infoMessage: String? = null,
-    val resendCooldownSeconds: Int = 0
+    val resendCooldownSeconds: Int = 0,
+    val pinVerifiedNeedsPassword: Boolean = false
 )
 
-class AuthViewModel(
-    private val authRepository: AuthRepository = AuthRepository(),
-    private val hkPayRepository: HKPayRepository = HKPayRepository()
-) : ViewModel() {
+class AuthViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val authRepository = AuthRepository()
+    private val hkPayRepository = HKPayRepository()
+    private val prefsRepository = ThemePreferencesRepository(application.applicationContext)
 
     private val _sessionState = MutableStateFlow<AuthSessionState>(AuthSessionState.Splash)
     val sessionState: StateFlow<AuthSessionState> = _sessionState.asStateFlow()
@@ -81,7 +86,7 @@ class AuthViewModel(
     }
 
     fun clearMessages() {
-        _uiState.update { it.copy(errorMessage = null, infoMessage = null) }
+        _uiState.update { it.copy(errorMessage = null, infoMessage = null, pinVerifiedNeedsPassword = false) }
     }
 
     fun signIn(email: String, password: String) {
@@ -95,7 +100,14 @@ class AuthViewModel(
         }
 
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null, infoMessage = null) }
+            _uiState.update {
+                it.copy(
+                    isLoading = true,
+                    errorMessage = null,
+                    infoMessage = null,
+                    pinVerifiedNeedsPassword = false
+                )
+            }
             authRepository.signIn(email, password)
                 .onSuccess { user ->
                     if (!user.isEmailVerified) {
@@ -114,6 +126,50 @@ class AuthViewModel(
         }
     }
 
+    fun verifyEmailPinForSignIn(email: String, pin: String) {
+        if (!FormatUtils.isValidEmail(email)) {
+            _uiState.update { it.copy(errorMessage = "Please enter a valid email address.") }
+            return
+        }
+        if (!SecurityUtils.isValidPin(pin)) {
+            _uiState.update { it.copy(errorMessage = "Please enter your 4-digit security PIN.") }
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null, infoMessage = null) }
+            val hasPin = prefsRepository.hasPinConfiguredForEmail(email)
+            if (!hasPin) {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = "No 4-digit PIN linked on this device for $email. Please sign in with your password."
+                    )
+                }
+                return@launch
+            }
+            val matches = prefsRepository.verifyPinCode(pin)
+            if (!matches) {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = "Incorrect 4-digit PIN. Please try again or use your password."
+                    )
+                }
+                return@launch
+            }
+
+            // PIN verified! Since session was explicitly signed out, prompt once for password to restore Firebase token
+            _uiState.update {
+                it.copy(
+                    isLoading = false,
+                    pinVerifiedNeedsPassword = true,
+                    infoMessage = "4-digit PIN verified! Enter your account password to restore your Firebase session."
+                )
+            }
+        }
+    }
+
     fun signUp(
         fullName: String,
         email: String,
@@ -125,7 +181,13 @@ class AuthViewModel(
         nidBackUri: Uri?,
         livenessUri: Uri?,
         livenessChallenge: String,
-        referralCode: String = ""
+        referralCode: String = "",
+        country: String = "Bangladesh",
+        district: String = "",
+        cityUpazila: String = "",
+        appPin: String = "",
+        confirmAppPin: String = "",
+        enableBiometric: Boolean = false
     ) {
         val config = _publicConfig.value
         if (!config.registrationEnabled) {
@@ -153,16 +215,28 @@ class AuthViewModel(
             _uiState.update { it.copy(errorMessage = "Passwords do not match.") }
             return
         }
+        if (country.isBlank()) {
+            _uiState.update { it.copy(errorMessage = "Please select your country.") }
+            return
+        }
+        if (!SecurityUtils.isValidPin(appPin)) {
+            _uiState.update { it.copy(errorMessage = "Please set up a 4-digit App Lock PIN.") }
+            return
+        }
+        if (appPin != confirmAppPin) {
+            _uiState.update { it.copy(errorMessage = "Your 4-digit App Lock PINs do not match.") }
+            return
+        }
         if (nidNumber.trim().length < 6) {
-            _uiState.update { it.copy(errorMessage = "Please enter a valid NID number.") }
+            _uiState.update { it.copy(errorMessage = "Please enter a valid NID or Document number.") }
             return
         }
         if (nidFrontUri == null || nidBackUri == null) {
-            _uiState.update { it.copy(errorMessage = "Please select both NID Front and NID Back photos.") }
+            _uiState.update { it.copy(errorMessage = "Please capture or select both Document Front and Back photos.") }
             return
         }
         if (livenessUri == null) {
-            _uiState.update { it.copy(errorMessage = "Please complete the live selfie liveness check.") }
+            _uiState.update { it.copy(errorMessage = "Please complete the live face liveness scan.") }
             return
         }
 
@@ -179,9 +253,18 @@ class AuthViewModel(
                 livenessUri = livenessUri,
                 livenessChallenge = livenessChallenge,
                 referralCodeInput = referralCode,
-                referralBonusUsd = config.referralBonusAmount
+                referralBonusUsd = config.referralBonusAmount,
+                country = country,
+                district = district,
+                cityUpazila = cityUpazila,
+                pinEnabled = true,
+                biometricEnabled = enableBiometric
             )
                 .onSuccess { user ->
+                    prefsRepository.setPinCode(user.uid, user.email ?: email, appPin)
+                    if (enableBiometric) {
+                        prefsRepository.setBiometricEnabled(true)
+                    }
                     _uiState.update {
                         it.copy(
                             isLoading = false,

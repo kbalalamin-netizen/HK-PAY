@@ -70,19 +70,24 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import coil.compose.AsyncImage
+import com.example.data.model.AppLanguage
 import com.example.data.model.NotificationPreferences
 import com.example.data.model.ThemeMode
 import com.example.ui.components.CopyableChip
 import com.example.ui.components.GlassCard
 import com.example.ui.components.HKPayPrimaryButton
 import com.example.ui.components.HKPayTopBar
+import com.example.ui.components.KycVerifiedSealBadge
 import com.example.ui.components.StatusBadge
 import com.example.ui.components.ThemeCycleIconButton
+import com.example.ui.components.WorldwideLocationSelector
 import com.example.ui.theme.HKPayIcons
 import com.example.ui.theme.LocalHKPayColors
 import com.example.ui.viewmodel.MainDashboardState
 import com.example.util.BiometricHelper
 import com.example.util.FormatUtils
+import com.example.util.HKPayStrings
+import com.example.util.LocationCatalog
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -91,13 +96,24 @@ import java.util.Locale
 fun ProfileScreen(
     state: MainDashboardState,
     themeMode: ThemeMode,
+    appLanguage: AppLanguage,
     biometricEnabled: Boolean,
+    pinLockEnabled: Boolean,
+    twoFactorEnabled: Boolean,
     onChangeTheme: (ThemeMode) -> Unit,
     onToggleTheme: () -> Unit,
+    onOpenLanguagePicker: () -> Unit,
     onToggleBiometric: (Boolean) -> Unit,
     onUploadPhoto: (Uri) -> Unit,
+    onBeforeExternalPicker: () -> Unit = {},
     onEditProfile: () -> Unit,
     onChangePassword: (String, String) -> Unit,
+    onNavigatePinSettings: () -> Unit,
+    onNavigateTwoFactor: () -> Unit,
+    onOpenPermissionsWizard: () -> Unit,
+    onNavigatePrivacyPolicy: () -> Unit,
+    onNavigateTerms: () -> Unit,
+    onNavigateAbout: () -> Unit,
     onNavigateKyc: () -> Unit,
     onNavigateReferrals: () -> Unit,
     onNavigateTutorials: () -> Unit,
@@ -112,6 +128,7 @@ fun ProfileScreen(
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val profile = state.userProfile
+    val countryInfo = LocationCatalog.countryFor(profile.country)
 
     var showChangePasswordDialog by remember { mutableStateOf(false) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
@@ -135,8 +152,8 @@ fun ProfileScreen(
     if (showLogoutConfirm) {
         AlertDialog(
             onDismissRequest = { showLogoutConfirm = false },
-            title = { Text("Sign Out of HK PAY?") },
-            text = { Text("Your active session will be cleared securely from this device.") },
+            title = { Text("Confirm Session Logout?") },
+            text = { Text("Note: Leaving the app normally keeps you signed in behind App Lock. Session Logout will clear your active account session on this device.") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -145,7 +162,7 @@ fun ProfileScreen(
                     },
                     modifier = Modifier.testTag("profile_confirm_logout_button")
                 ) {
-                    Text("Sign Out", color = extra.danger)
+                    Text(HKPayStrings.sessionLogout(), color = extra.danger)
                 }
             },
             dismissButton = {
@@ -223,6 +240,7 @@ fun ProfileScreen(
                             }
                             Surface(
                                 onClick = {
+                                    onBeforeExternalPicker()
                                     avatarPicker.launch(
                                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                     )
@@ -245,13 +263,25 @@ fun ProfileScreen(
                         }
 
                         Spacer(Modifier.height(12.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = profile.fullName.ifBlank { "HK PAY Member" },
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = countryInfo.flagEmoji,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            if (state.isKycVerified) {
+                                KycVerifiedSealBadge(showLabel = true)
+                            }
+                        }
                         Text(
-                            text = profile.fullName.ifBlank { "HK PAY Member" },
-                            style = MaterialTheme.typography.headlineSmall,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = profile.email,
+                            text = "${countryInfo.name} • ${profile.email}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -299,7 +329,12 @@ fun ProfileScreen(
                     PriceLine("Phone", profile.phone.ifBlank { "Not set" })
                     PriceLine("NID Number", profile.nidNumber.ifBlank { "Not set" })
                     PriceLine("Liveness Check", if (profile.livenessVerified) "Completed" else "Pending")
-                    PriceLine("City / Country", listOf(profile.cityUpazila, profile.country).filter { it.isNotBlank() }.joinToString(", ").ifBlank { "Bangladesh" })
+                    PriceLine(
+                        "Country / Location",
+                        "${countryInfo.flagEmoji} " + listOf(profile.cityUpazila, profile.district, countryInfo.name)
+                            .filter { it.isNotBlank() }
+                            .joinToString(", ")
+                    )
                     PriceLine("Preferred Currency", profile.preferredCurrency.ifBlank { "USD" })
                     PriceLine("Join Date", FormatUtils.formatDate(profile.joinDate))
                     PriceLine("Available Fee Credit", FormatUtils.formatMoney(state.availableReferralCredit, "USD"))
@@ -392,6 +427,37 @@ fun ProfileScreen(
                             )
                         }
                     }
+                    Spacer(Modifier.height(12.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(HKPayIcons.Language, contentDescription = null, tint = extra.cyanGlow)
+                            Spacer(Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    HKPayStrings.languageLabel(),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    "${appLanguage.shortTag} • ${appLanguage.displayName}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = extra.cyanGlow
+                                )
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = onOpenLanguagePicker,
+                            modifier = Modifier.testTag("profile_language_button")
+                        ) {
+                            Text(appLanguage.shortTag)
+                        }
+                    }
                 }
             }
 
@@ -400,9 +466,30 @@ fun ProfileScreen(
                     ProfileActionRow(
                         icon = Icons.Rounded.Edit,
                         title = "Edit Profile",
-                        subtitle = "Personal info, NID, occupation, currency & full address (${profile.completionPercent}%)",
+                        subtitle = "Personal info, NID, occupation, currency & worldwide address (${profile.completionPercent}%)",
                         onClick = onEditProfile,
                         testTag = "profile_edit_button"
+                    )
+                    ProfileActionRow(
+                        icon = HKPayIcons.PinLock,
+                        title = "App Lock & 4-Digit PIN",
+                        subtitle = if (pinLockEnabled) "4-Digit PIN Lock Active • Tap to change PIN" else "Set up a 4-Digit PIN for quick unlock",
+                        onClick = onNavigatePinSettings,
+                        testTag = "profile_pin_settings_button"
+                    )
+                    ProfileActionRow(
+                        icon = HKPayIcons.Security,
+                        title = "2-Factor Authentication (2FA)",
+                        subtitle = if (twoFactorEnabled) "Active (6-digit TOTP Authenticator)" else "Off • Add extra authenticator protection",
+                        onClick = onNavigateTwoFactor,
+                        testTag = "profile_twofa_button"
+                    )
+                    ProfileActionRow(
+                        icon = HKPayIcons.Shield,
+                        title = "App Permissions (Step-by-Step)",
+                        subtitle = "Camera, Location, Contacts, Photo Picker & Alerts",
+                        onClick = onOpenPermissionsWizard,
+                        testTag = "profile_permissions_wizard_button"
                     )
                     if (state.appSettings.referralProgramEnabled) {
                         ProfileActionRow(
@@ -476,6 +563,27 @@ fun ProfileScreen(
                         onClick = onNavigateSupport,
                         testTag = "profile_support_button"
                     )
+                    ProfileActionRow(
+                        icon = HKPayIcons.VerifiedUser,
+                        title = "Privacy Policy",
+                        subtitle = "How HK PAY protects KYC, biometrics & privacy",
+                        onClick = onNavigatePrivacyPolicy,
+                        testTag = "profile_privacy_button"
+                    )
+                    ProfileActionRow(
+                        icon = HKPayIcons.Badge,
+                        title = "Terms & Conditions",
+                        subtitle = "Cardholder agreement & compliance terms",
+                        onClick = onNavigateTerms,
+                        testTag = "profile_terms_button"
+                    )
+                    ProfileActionRow(
+                        icon = HKPayIcons.Info,
+                        title = "About HK PAY",
+                        subtitle = "HK IT LAB • Platform Architecture & Version Info",
+                        onClick = onNavigateAbout,
+                        testTag = "profile_about_button"
+                    )
                 }
             }
 
@@ -491,7 +599,7 @@ fun ProfileScreen(
                 ) {
                     Icon(HKPayIcons.Logout, contentDescription = null, tint = extra.danger)
                     Spacer(Modifier.width(8.dp))
-                    Text("Sign Out", color = extra.danger)
+                    Text(HKPayStrings.sessionLogout(), color = extra.danger)
                 }
                 Spacer(Modifier.height(16.dp))
             }
@@ -608,6 +716,7 @@ fun EditProfileScreen(
     themeMode: ThemeMode,
     onToggleTheme: () -> Unit,
     onUploadPhoto: (Uri) -> Unit,
+    onBeforeExternalPicker: () -> Unit = {},
     onBack: () -> Unit,
     onSave: (
         fullName: String,
@@ -727,6 +836,7 @@ fun EditProfileScreen(
                             }
                             Surface(
                                 onClick = {
+                                    onBeforeExternalPicker()
                                     avatarPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                                 },
                                 shape = CircleShape,
@@ -904,44 +1014,24 @@ fun EditProfileScreen(
                         shape = RoundedCornerShape(14.dp)
                     )
                     Spacer(Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedTextField(
-                            value = cityUpazila,
-                            onValueChange = { cityUpazila = it },
-                            label = { Text("City / Upazila") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f).testTag("edit_profile_city_input"),
-                            shape = RoundedCornerShape(14.dp)
-                        )
-                        OutlinedTextField(
-                            value = district,
-                            onValueChange = { district = it },
-                            label = { Text("District / State") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f).testTag("edit_profile_district_input"),
-                            shape = RoundedCornerShape(14.dp)
-                        )
-                    }
+                    WorldwideLocationSelector(
+                        country = country,
+                        district = district,
+                        cityUpazila = cityUpazila,
+                        onCountrySelected = { country = it },
+                        onDistrictChanged = { district = it },
+                        onCityUpazilaChanged = { cityUpazila = it }
+                    )
                     Spacer(Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedTextField(
-                            value = postalCode,
-                            onValueChange = { postalCode = it },
-                            label = { Text("Postal Code") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            singleLine = true,
-                            modifier = Modifier.weight(1f).testTag("edit_profile_postal_input"),
-                            shape = RoundedCornerShape(14.dp)
-                        )
-                        OutlinedTextField(
-                            value = country,
-                            onValueChange = { country = it },
-                            label = { Text("Country") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f).testTag("edit_profile_country_input"),
-                            shape = RoundedCornerShape(14.dp)
-                        )
-                    }
+                    OutlinedTextField(
+                        value = postalCode,
+                        onValueChange = { postalCode = it },
+                        label = { Text("Postal Code") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("edit_profile_postal_input"),
+                        shape = RoundedCornerShape(14.dp)
+                    )
                     Spacer(Modifier.height(18.dp))
                     HKPayPrimaryButton(
                         text = "Save Premium Profile",

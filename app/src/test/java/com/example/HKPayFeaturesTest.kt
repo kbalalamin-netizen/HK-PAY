@@ -1,12 +1,19 @@
 package com.example
 
+import com.example.data.model.AppLanguage
 import com.example.data.model.CardPackage
+import com.example.data.model.HKPayConstants
+import com.example.data.model.IssuedCard
 import com.example.data.model.ThemeMode
 import com.example.data.model.UserProfile
 import com.example.data.repository.AuthRepository
 import com.example.notifications.NotificationHelper
 import com.example.ui.screens.HKPayCardDesigns
+import com.example.ui.viewmodel.MainDashboardState
+import com.example.util.LocationCatalog
+import com.example.util.SecurityUtils
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -90,5 +97,65 @@ class HKPayFeaturesTest {
         assertTrue(body.contains("ORD-9021"))
         assertTrue(body.contains("Shipped"))
         assertTrue(body.contains("TRK-7788"))
+    }
+
+    @Test
+    fun `securityUtils pin hashing validates 4-digit pin and rejects wrong pins`() {
+        assertTrue(SecurityUtils.isValidPin("4829"))
+        assertFalse(SecurityUtils.isValidPin("482"))
+        assertFalse(SecurityUtils.isValidPin("abcd"))
+
+        val salt = SecurityUtils.generateSalt()
+        val hash = SecurityUtils.hashPin(uid = salt, pin = "4829")
+        assertTrue(SecurityUtils.verifyPin(uid = salt, pin = "4829", expectedHash = hash))
+        assertFalse(SecurityUtils.verifyPin(uid = salt, pin = "0000", expectedHash = hash))
+    }
+
+    @Test
+    fun `securityUtils totp generates valid 6-digit code and verifies within window`() {
+        val secret = SecurityUtils.generateTotpSecret()
+        assertTrue(secret.length >= 16)
+        val epochMs = 1_750_000_000_000L
+        val code = SecurityUtils.generateTotpCode(secret, timeMillis = epochMs)
+        assertEquals(6, code.length)
+        assertTrue(code.all { it.isDigit() })
+        assertTrue(SecurityUtils.verifyTotpCode(secret, code, timeMillis = epochMs))
+        assertTrue(SecurityUtils.verifyTotpCode(secret, code, timeMillis = epochMs + 25_000L))
+        assertFalse(SecurityUtils.verifyTotpCode(secret, "999999", timeMillis = epochMs + 600_000L))
+    }
+
+    @Test
+    fun `locationCatalog provides worldwide flags and Bangladesh Zila Upazila hierarchy`() {
+        assertTrue(LocationCatalog.countries.size >= 15)
+        val bd = LocationCatalog.countryFor("Bangladesh")
+        assertEquals("🇧🇩", bd.flagEmoji)
+        assertEquals("+880", bd.dialCode)
+
+        val bdZilas = LocationCatalog.regionsForCountry("Bangladesh")
+        assertTrue(bdZilas.contains("Dhaka"))
+        assertTrue(bdZilas.contains("Chattogram"))
+        assertTrue(LocationCatalog.subRegionsFor("Bangladesh", "Dhaka").contains("Dhanmondi"))
+    }
+
+    @Test
+    fun `appLanguage shortTags include flag and two-letter code`() {
+        assertEquals("🇧🇩 bn", AppLanguage.BENGALI.shortTag)
+        assertEquals("🇺🇸 en", AppLanguage.ENGLISH.shortTag)
+        assertEquals(AppLanguage.BENGALI, AppLanguage.fromCode("bn"))
+    }
+
+    @Test
+    fun `default dashboard sliders and card freeze resolution behave deterministically`() {
+        assertTrue(HKPayConstants.DEFAULT_DASHBOARD_SLIDERS.size >= 3)
+        val card1 = IssuedCard(cardId = "c1", cardStatus = "Active", isFrozen = false)
+        val card2 = IssuedCard(cardId = "c2", cardStatus = "Active", isFrozen = false)
+        val state = MainDashboardState(
+            userProfile = UserProfile(frozenCardIds = setOf("c1")),
+            issuedCards = listOf(card1, card2)
+        )
+        assertTrue(state.isCardFrozen(card1))
+        assertFalse(state.isCardFrozen(card2))
+        assertEquals(1, state.activeCardsCount)
+        assertTrue(state.activeSliders.isNotEmpty())
     }
 }

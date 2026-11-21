@@ -12,8 +12,85 @@ enum class ThemeMode(val label: String) {
     }
 }
 
+enum class AppLanguage(
+    val code: String,
+    val flagEmoji: String,
+    val displayName: String
+) {
+    ENGLISH("en", "🇺🇸", "English"),
+    BENGALI("bn", "🇧🇩", "বাংলা"),
+    ARABIC("ar", "🇸🇦", "العربية"),
+    HINDI("hi", "🇮🇳", "हिन्दी"),
+    MALAY("ms", "🇲🇾", "Melayu");
+
+    val shortTag: String
+        get() = "$flagEmoji $code"
+
+    companion object {
+        fun fromCode(code: String): AppLanguage {
+            return entries.firstOrNull {
+                it.code.equals(code.trim(), ignoreCase = true) ||
+                    it.name.equals(code.trim(), ignoreCase = true)
+            } ?: ENGLISH
+        }
+    }
+}
+
+data class DashboardSlider(
+    val id: String = "",
+    val title: String = "",
+    val subtitle: String = "",
+    val badge: String = "HK PAY",
+    val ctaLabel: String = "Explore",
+    val actionRoute: String = "store",
+    val imageUrl: String = "",
+    val gradientStartHex: Long = 0xFF0A2463,
+    val gradientEndHex: Long = 0xFF04102F,
+    val order: Int = 0,
+    val active: Boolean = true
+)
+
 object HKPayConstants {
     const val FIREBASE_DATABASE_URL = "https://money-6e7f2-default-rtdb.firebaseio.com"
+
+    val DEFAULT_DASHBOARD_SLIDERS = listOf(
+        DashboardSlider(
+            id = "hkpay_global_cards",
+            title = "HK PAY Global Physical Cards",
+            subtitle = "Order multi-currency Visa & Mastercard physical cards delivered worldwide with real-time tracking.",
+            badge = "PHYSICAL CARDS",
+            ctaLabel = "Card Store",
+            actionRoute = "store",
+            gradientStartHex = 0xFF0A2868,
+            gradientEndHex = 0xFF030B29,
+            order = 1,
+            active = true
+        ),
+        DashboardSlider(
+            id = "hkpay_card_security",
+            title = "Instant Card Freeze, PIN Lock & 2FA",
+            subtitle = "Protect every transaction with 4-digit App Lock, Biometric unlock, TOTP 2FA, and one-tap card freeze.",
+            badge = "SECURITY SHIELD",
+            ctaLabel = "My Cards",
+            actionRoute = "cards",
+            gradientStartHex = 0xFF0E3A5F,
+            gradientEndHex = 0xFF041024,
+            order = 2,
+            active = true
+        ),
+        DashboardSlider(
+            id = "hkpay_live_kyc",
+            title = "Direct NID Scan & Face Liveness",
+            subtitle = "Verify your identity in seconds with guided camera document capture and directional face liveness.",
+            badge = "VERIFIED KYC",
+            ctaLabel = "Verify KYC",
+            actionRoute = "kyc",
+            gradientStartHex = 0xFF14275E,
+            gradientEndHex = 0xFF050A1F,
+            order = 3,
+            active = true
+        )
+    )
 
     val ORDER_STATUS_STEPS = listOf(
         "Order Placed",
@@ -85,6 +162,10 @@ data class UserProfile(
     val accountStatus: String = "Active",
     val fcmToken: String = "",
     val biometricEnabled: Boolean = false,
+    val pinEnabled: Boolean = false,
+    val twoFactorEnabled: Boolean = false,
+    val twoFactorSecret: String = "",
+    val frozenCardIds: Set<String> = emptySet(),
     val referralCode: String = "",
     val referredBy: String = "",
     val referredByCode: String = "",
@@ -191,7 +272,8 @@ data class IssuedCard(
     val providerSecureViewSupported: Boolean = false,
     val hostedCardViewUrl: String = "",
     val providerCardApiUrl: String = "",
-    val issuedAt: Long = 0L
+    val issuedAt: Long = 0L,
+    val isFrozen: Boolean = false
 )
 
 data class SecureCardDisplayData(
@@ -259,7 +341,8 @@ data class AppSettings(
     val supportHours: String = "",
     val bannerTitle: String = "",
     val systemNotice: String = "",
-    val minSupportedVersionCode: Int = 1
+    val minSupportedVersionCode: Int = 1,
+    val sliders: List<DashboardSlider> = emptyList()
 )
 
 data class TransactionRecord(

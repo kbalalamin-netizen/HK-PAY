@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -36,6 +38,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -50,10 +53,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.R
+import com.example.data.model.AppLanguage
+import com.example.data.model.DashboardSlider
+import com.example.data.model.IssuedCard
 import com.example.data.model.ThemeMode
 import com.example.ui.components.CopyableChip
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.GlassCard
+import com.example.ui.components.KycVerifiedSealBadge
 import com.example.ui.components.RecentCardActivitySection
 import com.example.ui.components.StatusBadge
 import com.example.ui.components.ThemeCycleIconButton
@@ -62,15 +69,20 @@ import com.example.ui.theme.JetBrainsMonoFontFamily
 import com.example.ui.theme.LocalHKPayColors
 import com.example.ui.viewmodel.MainDashboardState
 import com.example.util.FormatUtils
+import com.example.util.HKPayStrings
+import com.example.util.LocationCatalog
 
 @Composable
 fun DashboardScreen(
     state: MainDashboardState,
     themeMode: ThemeMode,
+    appLanguage: AppLanguage,
     balanceVisible: Boolean,
     tutorialCompleted: Boolean,
     onToggleTheme: () -> Unit,
+    onOpenLanguagePicker: () -> Unit,
     onToggleBalanceVisible: () -> Unit,
+    onNavigateRoute: (String) -> Unit,
     onNavigateBuyCard: () -> Unit,
     onNavigateCardSelection: () -> Unit,
     onNavigateMyCards: () -> Unit,
@@ -89,6 +101,8 @@ fun DashboardScreen(
     val extra = LocalHKPayColors.current
     val clipboard = LocalClipboardManager.current
     val profile = state.userProfile
+    val countryInfo = LocationCatalog.countryFor(profile.country)
+    val sliders = state.activeSliders
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -101,7 +115,7 @@ fun DashboardScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Top Brand, Theme Switcher, Notification & Avatar Header
+            // Top Brand, Country Flag, Language Chip, Theme Switcher, Notification & Avatar Header
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -120,16 +134,28 @@ fun DashboardScreen(
                                 .size(44.dp)
                                 .clip(RoundedCornerShape(12.dp))
                         )
-                        Spacer(Modifier.width(12.dp))
+                        Spacer(Modifier.width(10.dp))
                         Column {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "HK PAY",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+                                Text(
+                                    text = countryInfo.flagEmoji,
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                if (state.isKycVerified) {
+                                    KycVerifiedSealBadge(showLabel = false)
+                                }
+                            }
                             Text(
-                                text = "HK PAY",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onBackground
-                            )
-                            Text(
-                                text = "Welcome, ${profile.fullName.ifBlank { "Member" }}",
+                                text = HKPayStrings.welcomeMember(profile.fullName.ifBlank { "Member" }),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = extra.cyanGlow,
                                 maxLines = 1,
@@ -142,6 +168,22 @@ fun DashboardScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
+                        Surface(
+                            onClick = onOpenLanguagePicker,
+                            shape = RoundedCornerShape(50),
+                            color = extra.electricBlue.copy(alpha = 0.14f),
+                            border = BorderStroke(1.dp, extra.cyanGlow.copy(alpha = 0.45f)),
+                            modifier = Modifier.testTag("header_language_button")
+                        ) {
+                            Text(
+                                text = appLanguage.shortTag,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onBackground,
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp)
+                            )
+                        }
+
                         ThemeCycleIconButton(
                             themeMode = themeMode,
                             onToggleTheme = onToggleTheme
@@ -234,6 +276,16 @@ fun DashboardScreen(
                 }
             }
 
+            // Admin-Controllable + Authentic Default Dashboard Slider (HK PAY Logo on Every Slide)
+            if (sliders.isNotEmpty()) {
+                item {
+                    DashboardPromoSlider(
+                        sliders = sliders,
+                        onActionRoute = onNavigateRoute
+                    )
+                }
+            }
+
             // Card-Linked Balance Hero Card (Show / Hide)
             item {
                 val linkedCards = state.issuedCards
@@ -268,7 +320,7 @@ fun DashboardScreen(
                             ) {
                                 Column {
                                     Text(
-                                        text = "CARD-LINKED BALANCE",
+                                        text = HKPayStrings.cardLinkedBalance(),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = Color(0xFF7BE8FF)
                                     )
@@ -327,20 +379,24 @@ fun DashboardScreen(
                                 Spacer(Modifier.height(12.dp))
                                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     items(linkedCards, key = { it.cardId }) { card ->
+                                        val frozen = state.isCardFrozen(card)
                                         Surface(
                                             onClick = onNavigateMyCards,
                                             shape = RoundedCornerShape(12.dp),
                                             color = Color.White.copy(alpha = 0.10f),
-                                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+                                            border = BorderStroke(
+                                                1.dp,
+                                                if (frozen) Color(0xFF7DD3FC).copy(alpha = 0.7f) else Color.White.copy(alpha = 0.2f)
+                                            )
                                         ) {
                                             Row(
                                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 Icon(
-                                                    imageVector = HKPayIcons.CreditCard,
+                                                    imageVector = if (frozen) HKPayIcons.Freeze else HKPayIcons.CreditCard,
                                                     contentDescription = null,
-                                                    tint = Color(0xFF5CEBFF),
+                                                    tint = if (frozen) Color(0xFF7DD3FC) else Color(0xFF5CEBFF),
                                                     modifier = Modifier.size(16.dp)
                                                 )
                                                 Spacer(Modifier.width(8.dp))
@@ -352,12 +408,13 @@ fun DashboardScreen(
                                                     )
                                                     Text(
                                                         text = when {
+                                                            frozen -> "FROZEN"
                                                             !balanceVisible -> "••••••"
                                                             card.providerBalanceSupported -> FormatUtils.formatMoney(card.balance, card.balanceCurrency)
                                                             else -> card.cardStatus
                                                         },
                                                         style = MaterialTheme.typography.labelSmall,
-                                                        color = Color(0xFF5CEBFF)
+                                                        color = if (frozen) Color(0xFF7DD3FC) else Color(0xFF5CEBFF)
                                                     )
                                                 }
                                             }
@@ -419,7 +476,7 @@ fun DashboardScreen(
                 }
             }
 
-            // Member Identity & Status Card
+            // Member Identity & Status Card (ONLY UID is copyable; verified seal + country flag)
             item {
                 GlassCard {
                     Row(
@@ -428,15 +485,24 @@ fun DashboardScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = profile.fullName.ifBlank { "HK PAY Member" },
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                if (state.isKycVerified) {
+                                    KycVerifiedSealBadge(showLabel = true)
+                                }
+                            }
                             Text(
-                                text = profile.fullName.ifBlank { "HK PAY Member" },
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = profile.email,
+                                text = "${countryInfo.flagEmoji} ${countryInfo.name} • ${profile.email}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
@@ -444,12 +510,13 @@ fun DashboardScreen(
                             )
                             Spacer(Modifier.height(10.dp))
                             CopyableChip(
-                                label = "ID",
+                                label = "UID",
                                 value = profile.publicUserId.ifBlank { "HKP-MEMBER" },
                                 onCopy = {
                                     clipboard.setText(AnnotatedString(profile.publicUserId))
                                     onCopiedMessage("User ID copied")
-                                }
+                                },
+                                modifier = Modifier.testTag("dashboard_copy_uid_chip")
                             )
                         }
                         Spacer(Modifier.width(12.dp))
@@ -500,7 +567,7 @@ fun DashboardScreen(
                                         color = extra.warning
                                     )
                                     Text(
-                                        text = "Tap to submit NID/Passport & Liveness check for card eligibility.",
+                                        text = "Tap to submit NID/Passport & Live Face Liveness check for Verified badge.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -545,7 +612,7 @@ fun DashboardScreen(
             item {
                 Column {
                     Text(
-                        text = "Quick Actions",
+                        text = HKPayStrings.quickActions(),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onBackground
                     )
@@ -655,7 +722,7 @@ fun DashboardScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Currency Rates",
+                            text = HKPayStrings.currencyRates(),
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onBackground
                         )
@@ -730,7 +797,7 @@ fun DashboardScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Recent Orders",
+                        text = HKPayStrings.recentOrders(),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onBackground
                     )
@@ -793,6 +860,146 @@ fun DashboardScreen(
             }
 
             item { Spacer(Modifier.height(8.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun DashboardPromoSlider(
+    sliders: List<DashboardSlider>,
+    onActionRoute: (String) -> Unit
+) {
+    val extra = LocalHKPayColors.current
+    val pagerState = rememberPagerState(pageCount = { sliders.size })
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("dashboard_slider_section"),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        HorizontalPager(
+            state = pagerState,
+            pageSpacing = 12.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) { page ->
+            val slide = sliders[page]
+            val startColor = Color(slide.gradientStartHex)
+            val endColor = Color(slide.gradientEndHex)
+
+            Surface(
+                onClick = { onActionRoute(slide.actionRoute) },
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, extra.cyanGlow.copy(alpha = 0.45f)),
+                color = Color.Transparent,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(148.dp)
+                    .testTag("dashboard_slider_page_$page")
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Brush.linearGradient(listOf(startColor, endColor)))
+                ) {
+                    if (slide.imageUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = slide.imageUrl,
+                            contentDescription = slide.title,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .alpha(0.24f)
+                        )
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = Color(0xFF00E5FF).copy(alpha = 0.18f),
+                                border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.55f))
+                            ) {
+                                Text(
+                                    text = slide.badge.ifBlank { "HK PAY" },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF7BE8FF),
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp)
+                                )
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                text = slide.title,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = slide.subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.84f),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                text = "${slide.ctaLabel.ifBlank { "Open" }} →",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF5CEBFF)
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        // Prominent HK PAY official logo on every slide
+                        Surface(
+                            shape = RoundedCornerShape(18.dp),
+                            color = Color.White.copy(alpha = 0.08f),
+                            border = BorderStroke(1.2.dp, Color(0xFF5CEBFF).copy(alpha = 0.55f)),
+                            modifier = Modifier.size(84.dp)
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.hk_pay_logo),
+                                contentDescription = "HK PAY Official Brand",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(RoundedCornerShape(18.dp))
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            repeat(sliders.size) { idx ->
+                val active = pagerState.currentPage == idx
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 3.dp)
+                        .height(6.dp)
+                        .width(if (active) 20.dp else 6.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (active) extra.cyanGlow else MaterialTheme.colorScheme.outlineVariant
+                        )
+                )
+            }
         }
     }
 }

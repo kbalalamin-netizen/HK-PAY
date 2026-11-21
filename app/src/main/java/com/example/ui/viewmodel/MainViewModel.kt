@@ -4,11 +4,14 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.model.AppLanguage
 import com.example.data.model.AppNotification
 import com.example.data.model.AppSettings
 import com.example.data.model.CardOrder
 import com.example.data.model.CardPackage
 import com.example.data.model.CurrencyRate
+import com.example.data.model.DashboardSlider
+import com.example.data.model.HKPayConstants
 import com.example.data.model.IssuedCard
 import com.example.data.model.KycSubmission
 import com.example.data.model.NotificationPreferences
@@ -23,6 +26,7 @@ import com.example.data.repository.AuthRepository
 import com.example.data.repository.HKPayRepository
 import com.example.data.repository.ThemePreferencesRepository
 import com.example.notifications.NotificationHelper
+import com.example.util.SecurityUtils
 import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -47,14 +51,27 @@ data class MainDashboardState(
     val kycSubmission: KycSubmission = KycSubmission(),
     val currencyRates: List<CurrencyRate> = emptyList(),
     val appSettings: AppSettings = AppSettings(),
+    val remoteSliders: List<DashboardSlider> = emptyList(),
     val transactions: List<TransactionRecord> = emptyList(),
     val notifications: List<AppNotification> = emptyList(),
     val supportTickets: List<SupportTicket> = emptyList(),
     val referrals: List<ReferralRecord> = emptyList(),
     val referralRewards: List<ReferralReward> = emptyList(),
     val revealedCardData: Map<String, SecureCardDisplayData> = emptyMap(),
-    val revealingCardId: String? = null
+    val revealingCardId: String? = null,
+    val freezingCardId: String? = null
 ) {
+    val activeSliders: List<DashboardSlider>
+        get() = when {
+            remoteSliders.isNotEmpty() -> remoteSliders
+            appSettings.sliders.isNotEmpty() -> appSettings.sliders
+            else -> HKPayConstants.DEFAULT_DASHBOARD_SLIDERS
+        }
+
+    fun isCardFrozen(card: IssuedCard): Boolean {
+        return card.isFrozen || card.cardId in userProfile.frozenCardIds
+    }
+
     val availableReferralCredit: Double
         get() = referralRewards.filter { it.status == "Available" }.sumOf { it.amount }
 
@@ -65,7 +82,7 @@ data class MainDashboardState(
         get() = notifications.count { !it.isRead }
 
     val activeCardsCount: Int
-        get() = issuedCards.count { it.cardStatus.equals("Active", ignoreCase = true) }
+        get() = issuedCards.count { it.cardStatus.equals("Active", ignoreCase = true) && !isCardFrozen(it) }
 
     val totalLinkedCardBalance: Double
         get() = issuedCards.filter { it.providerBalanceSupported }.sumOf { it.balance }
@@ -84,6 +101,9 @@ data class MainDashboardState(
             kycSubmission.status.isNotBlank() && kycSubmission.status != "Not Submitted" -> kycSubmission.status
             else -> "Not Submitted"
         }
+
+    val isKycVerified: Boolean
+        get() = effectiveKycStatus.equals("Approved", ignoreCase = true)
 }
 
 sealed interface UiEvent {
@@ -93,6 +113,7 @@ sealed interface UiEvent {
     data object KycSubmitted : UiEvent
     data class TicketCreated(val ticketId: String) : UiEvent
     data object ProfileUpdated : UiEvent
+    data object PinUpdated : UiEvent
 }
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -107,7 +128,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         initialValue = ThemeMode.NAVY
     )
 
+    val appLanguage: StateFlow<AppLanguage> = themeRepository.appLanguage.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = AppLanguage.ENGLISH
+    )
+
     val biometricEnabled: StateFlow<Boolean> = themeRepository.biometricEnabled.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = false
+    )
+
+    val pinLockEnabled: StateFlow<Boolean> = themeRepository.pinLockEnabled.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = false
+    )
+
+    val twoFactorEnabled: StateFlow<Boolean> = themeRepository.twoFactorEnabled.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = false
+    )
+
+    val twoFactorSecret: StateFlow<String> = themeRepository.twoFactorSecret.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = ""
+    )
+
+    val permissionsWizardDone: StateFlow<Boolean> = themeRepository.permissionsWizardDone.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = false
@@ -127,6 +178,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _isBiometricUnlockedThisSession = MutableStateFlow(false)
     val isBiometricUnlockedThisSession: StateFlow<Boolean> = _isBiometricUnlockedThisSession.asStateFlow()
+
+    private val _isCardManagementVerified = MutableStateFlow(false)
+    val isCardManagementVerified: StateFlow<Boolean> = _isCardManagementVerified.asStateFlow()
+
+    private val _pinUnlockError = MutableStateFlow<String?>(null)
+    val pinUnlockError: StateFlow<String?> = _pinUnlockError.asStateFlow()
+
+    private var suppressNextLockUntilMs: Long = 0L
 
     private val _state = MutableStateFlow(MainDashboardState())
     val state: StateFlow<MainDashboardState> = _state.asStateFlow()
@@ -154,6 +213,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         observationJobs += viewModelScope.launch {
             repository.observeUserProfile(uid).collect { profile ->
                 _state.update { it.copy(userProfile = profile, isLoading = false) }
+                // Sync remote 2FA state into local store if enabled remotely and missing locally
+                if (profile.twoFactorEnabled && profile.twoFactorSecret.isNotBlank() && twoFactorSecret.value.isBlank()) {
+                    themeRepository.setTwoFactorConfig(true, profile.twoFactorSecret)
+                }
             }
         }
         observationJobs += viewModelScope.launch {
@@ -185,6 +248,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         observationJobs += viewModelScope.launch {
             repository.observeAppSettings().collect { settings ->
                 _state.update { it.copy(appSettings = settings) }
+            }
+        }
+        observationJobs += viewModelScope.launch {
+            repository.observeDashboardSliders().collect { sliders ->
+                _state.update { it.copy(remoteSliders = sliders) }
             }
         }
         observationJobs += viewModelScope.launch {
@@ -263,11 +331,165 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         hasLoadedInitialOrders = false
         lastKnownOrderStatuses.clear()
         _isBiometricUnlockedThisSession.value = false
+        _isCardManagementVerified.value = false
+        _pinUnlockError.value = null
         _state.value = MainDashboardState(isLoading = false)
     }
 
+    fun suppressNextBackgroundLock(durationMs: Long = 15_000L) {
+        suppressNextLockUntilMs = System.currentTimeMillis() + durationMs
+    }
+
+    fun lockAppIfEnabled() {
+        if (System.currentTimeMillis() <= suppressNextLockUntilMs) {
+            suppressNextLockUntilMs = 0L
+            return
+        }
+        if (pinLockEnabled.value || biometricEnabled.value) {
+            _isBiometricUnlockedThisSession.value = false
+            _isCardManagementVerified.value = false
+        }
+    }
+
     fun unlockBiometrically() {
+        _pinUnlockError.value = null
         _isBiometricUnlockedThisSession.value = true
+    }
+
+    fun markCardManagementVerified() {
+        _isCardManagementVerified.value = true
+    }
+
+    fun unlockWithPin(pin: String) {
+        if (!SecurityUtils.isValidPin(pin)) {
+            _pinUnlockError.value = "Enter a 4-digit PIN"
+            return
+        }
+        viewModelScope.launch {
+            val ok = themeRepository.verifyPinCode(pin)
+            if (ok) {
+                _pinUnlockError.value = null
+                _isBiometricUnlockedThisSession.value = true
+            } else {
+                _pinUnlockError.value = "Incorrect 4-digit PIN. Try again or use Biometric."
+            }
+        }
+    }
+
+    fun clearPinUnlockError() {
+        _pinUnlockError.value = null
+    }
+
+    fun setupOrChangePin(currentPin: String?, newPin: String, confirmPin: String) {
+        if (!SecurityUtils.isValidPin(newPin)) {
+            viewModelScope.launch { _events.emit(UiEvent.ShowMessage("PIN must be exactly 4 digits.", true)) }
+            return
+        }
+        if (newPin != confirmPin) {
+            viewModelScope.launch { _events.emit(UiEvent.ShowMessage("New PINs do not match.", true)) }
+            return
+        }
+        viewModelScope.launch {
+            if (pinLockEnabled.value) {
+                if (currentPin.isNullOrBlank() || !themeRepository.verifyPinCode(currentPin)) {
+                    _events.emit(UiEvent.ShowMessage("Current 4-digit PIN is incorrect.", true))
+                    return@launch
+                }
+            }
+            val uid = boundUid.orEmpty()
+            val email = _state.value.userProfile.email
+            themeRepository.setPinCode(uid, email, newPin)
+            _isBiometricUnlockedThisSession.value = true
+            if (uid.isNotBlank()) {
+                repository.updateSecuritySettings(uid = uid, pinEnabled = true)
+            }
+            _events.emit(UiEvent.PinUpdated)
+            _events.emit(UiEvent.ShowMessage("4-digit App Lock PIN saved."))
+        }
+    }
+
+    fun disablePinLock(currentPin: String) {
+        viewModelScope.launch {
+            if (!themeRepository.verifyPinCode(currentPin)) {
+                _events.emit(UiEvent.ShowMessage("Incorrect current PIN.", true))
+                return@launch
+            }
+            themeRepository.disablePinLock()
+            val uid = boundUid.orEmpty()
+            if (uid.isNotBlank()) {
+                repository.updateSecuritySettings(uid = uid, pinEnabled = false)
+            }
+            _events.emit(UiEvent.ShowMessage("4-digit PIN App Lock disabled."))
+        }
+    }
+
+    fun enableTwoFactor(secret: String, totpCode: String) {
+        if (!SecurityUtils.verifyTotpCode(secret, totpCode)) {
+            viewModelScope.launch {
+                _events.emit(UiEvent.ShowMessage("Invalid 6-digit authenticator code. Please check the current code.", true))
+            }
+            return
+        }
+        val uid = boundUid.orEmpty()
+        viewModelScope.launch {
+            themeRepository.setTwoFactorConfig(enabled = true, secret = secret)
+            if (uid.isNotBlank()) {
+                repository.updateSecuritySettings(
+                    uid = uid,
+                    twoFactorEnabled = true,
+                    twoFactorSecret = secret
+                )
+            }
+            _events.emit(UiEvent.ShowMessage("2-Factor Authentication (2FA) enabled."))
+        }
+    }
+
+    fun disableTwoFactor(totpCode: String) {
+        val secret = twoFactorSecret.value.ifBlank { _state.value.userProfile.twoFactorSecret }
+        if (secret.isNotBlank() && !SecurityUtils.verifyTotpCode(secret, totpCode)) {
+            viewModelScope.launch {
+                _events.emit(UiEvent.ShowMessage("Enter a valid 6-digit 2FA code to disable 2FA.", true))
+            }
+            return
+        }
+        val uid = boundUid.orEmpty()
+        viewModelScope.launch {
+            themeRepository.setTwoFactorConfig(enabled = false, secret = "")
+            if (uid.isNotBlank()) {
+                repository.updateSecuritySettings(
+                    uid = uid,
+                    twoFactorEnabled = false,
+                    twoFactorSecret = ""
+                )
+            }
+            _events.emit(UiEvent.ShowMessage("2-Factor Authentication disabled."))
+        }
+    }
+
+    fun verifyTwoFactorCode(code: String): Boolean {
+        val secret = twoFactorSecret.value.ifBlank { _state.value.userProfile.twoFactorSecret }
+        if (secret.isBlank()) return true
+        return SecurityUtils.verifyTotpCode(secret, code)
+    }
+
+    fun toggleCardFreeze(card: IssuedCard, freeze: Boolean) {
+        val uid = boundUid ?: return
+        viewModelScope.launch {
+            _state.update { it.copy(freezingCardId = card.cardId) }
+            repository.toggleCardFreeze(uid, card.cardId, freeze)
+                .onSuccess {
+                    _state.update { it.copy(freezingCardId = null) }
+                    _events.emit(
+                        UiEvent.ShowMessage(
+                            if (freeze) "Card •••• ${card.last4.ifBlank { "HK" }} frozen." else "Card •••• ${card.last4.ifBlank { "HK" }} unfrozen."
+                        )
+                    )
+                }
+                .onFailure { err ->
+                    _state.update { it.copy(freezingCardId = null) }
+                    _events.emit(UiEvent.ShowMessage(err.localizedMessage ?: "Failed to update card freeze status.", true))
+                }
+        }
     }
 
     fun toggleBalanceVisibility() {
@@ -288,6 +510,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setThemeMode(mode: ThemeMode) {
         viewModelScope.launch {
             themeRepository.setThemeMode(mode)
+        }
+    }
+
+    fun setAppLanguage(language: AppLanguage) {
+        viewModelScope.launch {
+            themeRepository.setAppLanguage(language)
+            _events.emit(UiEvent.ShowMessage("Language switched to ${language.shortTag} (${language.displayName})"))
+        }
+    }
+
+    fun setPermissionsWizardDone(done: Boolean) {
+        viewModelScope.launch {
+            themeRepository.setPermissionsWizardDone(done)
         }
     }
 

@@ -289,15 +289,16 @@ fun HKPayPhysicalCardVisual(
     expiryDate: String,
     statusBadgeText: String,
     modifier: Modifier = Modifier,
+    isFrozen: Boolean = false,
     gradientStart: Color? = null,
     gradientEnd: Color? = null,
     accentColor: Color? = null
 ) {
     val extra = LocalHKPayColors.current
     val shape = RoundedCornerShape(22.dp)
-    val startCol = gradientStart ?: extra.cardGradientStart
-    val endCol = gradientEnd ?: extra.cardGradientEnd
-    val accentCol = accentColor ?: Color(0xFF00E5FF)
+    val startCol = if (isFrozen) Color(0xFF1A2B42) else (gradientStart ?: extra.cardGradientStart)
+    val endCol = if (isFrozen) Color(0xFF0E1826) else (gradientEnd ?: extra.cardGradientEnd)
+    val accentCol = if (isFrozen) Color(0xFF7DD3FC) else (accentColor ?: Color(0xFF00E5FF))
 
     Box(
         modifier = modifier
@@ -324,10 +325,11 @@ fun HKPayPhysicalCardVisual(
                 ),
                 shape = shape
             )
-            .padding(20.dp)
     ) {
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(20.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
@@ -361,7 +363,7 @@ fun HKPayPhysicalCardVisual(
                         )
                     }
                 }
-                StatusBadge(status = statusBadgeText)
+                StatusBadge(status = if (isFrozen) "Frozen" else statusBadgeText)
             }
 
             Row(
@@ -447,6 +449,78 @@ fun HKPayPhysicalCardVisual(
                         )
                     }
                 }
+            }
+        }
+
+        if (isFrozen) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF0A192F).copy(alpha = 0.42f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = Color(0xFF0F2942).copy(alpha = 0.92f),
+                    border = BorderStroke(1.dp, Color(0xFF7DD3FC).copy(alpha = 0.8f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = HKPayIcons.Freeze,
+                            contentDescription = "Card frozen",
+                            tint = Color(0xFF7DD3FC),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "CARD FROZEN",
+                            color = Color(0xFFE0F2FE),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun KycVerifiedSealBadge(
+    modifier: Modifier = Modifier,
+    showLabel: Boolean = false
+) {
+    val extra = LocalHKPayColors.current
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(50),
+        color = extra.electricBlue.copy(alpha = 0.16f),
+        border = BorderStroke(1.dp, extra.cyanGlow.copy(alpha = 0.55f))
+    ) {
+        Row(
+            modifier = Modifier.padding(
+                horizontal = if (showLabel) 8.dp else 4.dp,
+                vertical = 3.dp
+            ),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = HKPayIcons.VerifiedSeal,
+                contentDescription = "KYC Verified Badge",
+                tint = extra.cyanGlow,
+                modifier = Modifier.size(16.dp)
+            )
+            if (showLabel) {
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = "Verified",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = extra.cyanGlow,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }

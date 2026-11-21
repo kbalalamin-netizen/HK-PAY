@@ -49,7 +49,12 @@
       "referralBonusAmount": { ".read": true },
       "systemNotice": { ".read": true },
       "supportEmail": { ".read": true },
+      "sliders": { ".read": true },
       "paymentMethods": { ".read": "auth != null" }
+    },
+    "dashboard_sliders": {
+      ".read": "auth != null",
+      ".write": false
     },
     "orders": {
       "$uid": {
@@ -62,7 +67,12 @@
     "cards": {
       "$uid": {
         ".read": "auth != null && auth.uid == $uid",
-        ".write": false
+        ".write": false,
+        "$cardId": {
+          "isFrozen": {
+            ".write": "auth != null && auth.uid == $uid && newData.isBoolean()"
+          }
+        }
       }
     },
     "kyc_submissions": {
