@@ -17,15 +17,18 @@ A native Android application built with **Kotlin** and **Jetpack Compose (Materi
 
 ## Key Features Implemented
 
-- **Authentication:** Splash screen, Welcome, Sign In, Sign Up, Forgot Password, Email Verification flow, Password visibility toggle, Password change, and persistent auth state.
-- **User Dashboard:** Welcome header with HK PAY branding, Unique User ID (`HKP-XXXXXX`), Account & KYC status badges, KPIs (Orders, Active Cards, Pending), Quick Actions grid, Live Currency Rates preview, Recent Orders, and Notification Center badge.
+- **Authentication & Biometric Unlock:** Splash screen, Welcome, Sign In, Sign Up (with optional Referral Code), Forgot Password, Email Verification flow, Password visibility toggle, Password change, persistent auth state, and optional **Biometric Authentication** (Fingerprint & Face Unlock via AndroidX BiometricPrompt) toggleable in Profile settings for app-launch unlock and sensitive actions (revealing card details, confirming orders, submitting payment proof, changing password).
+- **In-App Tutorials:** Interactive 4-step walkthrough (`HorizontalPager`) with visual UI mockups covering User Registration, Browsing Card Packages, Card Ordering & Delivery Tracking, and KYC Verification—with Back, Next, Complete, and Skip controls accessible from Dashboard and Profile.
+- **Referral Program:** Every user receives a unique `HKR...` referral code in Profile & Refer & Earn. New users can apply a friend's referral code at Sign Up (or claim once in the Referral Center); both referrer and referee receive a `$5.00` card fee credit tracked in Firebase RTDB (`/referral_codes`, `/referrals`, `/referral_rewards`) and redeemable at checkout.
+- **Physical Card Selection (`HorizontalPager`):** Swipeable physical card finish showcase (`Obsidian Navy`, `Electric Cyan`, `Midnight Graphite`, `Royal Aurora`) with animated depth/scale preview paired directly with live Firebase card packages.
+- **User Dashboard:** Welcome header with HK PAY branding, Unique User ID (`HKP-XXXXXX`), Account & KYC status badges, KPIs (Orders, Active Cards, Pending), Quick Actions grid, Referral Credit card, Live Currency Rates preview, Recent Orders, and Notification Center badge.
 - **Physical Card Store (`/card_packages`):** Streams live card packages from Firebase Realtime Database with full pricing breakdown (Card Price, Issuing Fee, Delivery Fee, Total Price), KYC requirement, and availability sync.
-- **Buy Physical Card & Payment System:** Full shipping checkout form, unique Order ID generation, configurable payment methods (`bKash`, `Nagad`, `Rocket`, `Bank Transfer`, `Provider Gateway`) loaded from `/app_settings/paymentMethods`, receipt image upload to Firebase Storage via Android Photo Picker, and backend-controlled payment confirmation.
-- **My Orders & 14-Step Tracking:** Live order status timeline (`Order Placed` through `Active`, `Cancelled`, `Refunded`), courier name, tracking number, estimated delivery, and payment completion flow.
-- **My Physical Cards (`/cards/{uid}`):** Displays issued cards with HK PAY branding, Cardholder Name, Type, Network, Status, Activation Status, Issuing Provider, Balance (when provider-supported), and gated Reveal/Hide/Copy card details over authenticated HTTPS issuer endpoints (never storing plaintext PAN/CVV in Firebase).
+- **Buy Physical Card & Payment System:** Full shipping checkout form with selected card finish preview, referral fee credit toggle, unique Order ID generation, configurable payment methods (`bKash`, `Nagad`, `Rocket`, `Bank Transfer`, `Provider Gateway`) loaded from `/app_settings/paymentMethods`, receipt image upload to Firebase Storage via Android Photo Picker, and backend-controlled payment confirmation.
+- **My Orders & 14-Step Tracking:** Live order status timeline (`Order Placed` through `Active`, `Cancelled`, `Refunded`), selected finish, referral credit breakdown, courier tracking, and payment completion flow.
+- **My Physical Cards (`/cards/{uid}`):** Displays issued cards with HK PAY branding, Cardholder Name, Type, Network, Status, Activation Status, Issuing Provider, Balance (when provider-supported), and biometric- & HTTPS-gated Reveal/Hide/Copy card details (never storing plaintext PAN/CVV in Firebase).
 - **KYC Verification:** NID / Passport form, Date of Birth picker, Photo Picker document & optional selfie upload to `/kyc_uploads/{uid}` in Firebase Storage, and live KYC status sync.
 - **Currency Exchange Rates (`/currency_rates`):** Live USD/EUR/GBP to BDT rates with Card Purchase Rate, Service Charge, Last Updated timestamp, and interactive Card Purchase Calculator.
-- **Profile, Transactions, Notifications & Support:** Profile photo upload, Edit Profile, Light/Dark/System theme selector, Notification preferences, FCM push notifications (`HKPayMessagingService`), Transaction History filterable by type, and Customer Support ticketing with real-time reply history.
+- **Profile, Transactions, Notifications & Support:** Profile photo upload, Edit Profile, Biometric Unlock toggle, Referral Code sharing, App Tutorials replay, Light/Dark/System theme selector, Notification preferences, FCM push notifications (`HKPayMessagingService`), Transaction History filterable by type, and Customer Support ticketing with real-time reply history.
 
 ---
 
@@ -33,7 +36,7 @@ A native Android application built with **Kotlin** and **Jetpack Compose (Materi
 
 ### 1. Deploy Realtime Database & Storage Rules
 Zero-trust rules are included in the root project:
-- `database.rules.json` — Blocks unauthorized reads/writes, enforces per-user isolation on `/users/$uid`, `/orders/$uid`, `/cards/$uid`, `/kyc_submissions/$uid`, `/transactions/$uid`, `/notifications/$uid`, `/support_tickets/$uid`, forbids client-side admin privilege escalation, and blocks client-side payment/KYC/card approval.
+- `database.rules.json` — Blocks unauthorized reads/writes, enforces per-user isolation on `/users/$uid`, `/orders/$uid`, `/cards/$uid`, `/kyc_submissions/$uid`, `/transactions/$uid`, `/notifications/$uid`, `/support_tickets/$uid`, `/referrals/$uid`, and `/referral_rewards/$uid`, restricts `/referral_codes` to exact-code lookups (preventing list enumeration), forbids client-side admin privilege escalation, and blocks client-side payment/KYC/card approval.
 - `storage.rules` — Enforces per-user access and image size/MIME limits on `profile_photos/{userId}`, `user_uploads/{userId}`, and `kyc_uploads/{userId}`.
 
 Deploy with Firebase CLI:

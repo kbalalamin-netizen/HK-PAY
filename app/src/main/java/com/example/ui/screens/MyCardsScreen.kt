@@ -41,6 +41,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.fragment.app.FragmentActivity
 import com.example.R
 import com.example.data.model.IssuedCard
 import com.example.ui.components.EmptyStateCard
@@ -51,11 +52,13 @@ import com.example.ui.components.StatusBadge
 import com.example.ui.theme.JetBrainsMonoFontFamily
 import com.example.ui.theme.LocalHKPayColors
 import com.example.ui.viewmodel.MainDashboardState
+import com.example.util.BiometricHelper
 import com.example.util.FormatUtils
 
 @Composable
 fun MyCardsScreen(
     state: MainDashboardState,
+    biometricEnabled: Boolean,
     onRevealToggle: (IssuedCard) -> Unit,
     onNavigateStore: () -> Unit,
     onCopied: (String) -> Unit
@@ -163,7 +166,22 @@ fun MyCardsScreen(
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
                                     OutlinedButton(
-                                        onClick = { onRevealToggle(card) },
+                                        onClick = {
+                                            val alreadyRevealed = revealed != null
+                                            val activity = context as? FragmentActivity
+                                            if (!alreadyRevealed && biometricEnabled && activity != null) {
+                                                BiometricHelper.authenticate(
+                                                    activity = activity,
+                                                    title = "Authenticate to Reveal Card",
+                                                    subtitle = "Verify fingerprint or face ID to view sensitive card details",
+                                                    negativeButtonText = "Cancel",
+                                                    onSuccess = { onRevealToggle(card) },
+                                                    onError = { msg -> onCopied(msg) }
+                                                )
+                                            } else {
+                                                onRevealToggle(card)
+                                            }
+                                        },
                                         modifier = Modifier
                                             .weight(1f)
                                             .height(48.dp)

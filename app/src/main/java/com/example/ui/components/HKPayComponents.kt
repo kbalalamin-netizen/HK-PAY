@@ -233,10 +233,16 @@ fun HKPayPhysicalCardVisual(
     maskedOrFullNumber: String,
     expiryDate: String,
     statusBadgeText: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    gradientStart: Color? = null,
+    gradientEnd: Color? = null,
+    accentColor: Color? = null
 ) {
     val extra = LocalHKPayColors.current
     val shape = RoundedCornerShape(22.dp)
+    val startCol = gradientStart ?: extra.cardGradientStart
+    val endCol = gradientEnd ?: extra.cardGradientEnd
+    val accentCol = accentColor ?: extra.cyanGlow
 
     Box(
         modifier = modifier
@@ -246,9 +252,9 @@ fun HKPayPhysicalCardVisual(
             .background(
                 Brush.linearGradient(
                     colors = listOf(
-                        extra.cardGradientStart,
-                        extra.cardGradientEnd,
-                        Color(0xFF062A5E)
+                        startCol,
+                        endCol,
+                        startCol.copy(alpha = 0.85f)
                     )
                 )
             )
@@ -256,7 +262,7 @@ fun HKPayPhysicalCardVisual(
                 width = 1.2.dp,
                 brush = Brush.linearGradient(
                     colors = listOf(
-                        extra.cyanGlow.copy(alpha = 0.7f),
+                        accentCol.copy(alpha = 0.75f),
                         extra.electricBlue.copy(alpha = 0.3f),
                         Color.White.copy(alpha = 0.18f)
                     )

@@ -19,12 +19,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AddCard
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -54,7 +56,8 @@ import com.example.util.FormatUtils
 @Composable
 fun CardStoreScreen(
     state: MainDashboardState,
-    onSelectPackage: (CardPackage) -> Unit
+    onSelectPackage: (CardPackage) -> Unit,
+    onOpenCardSelector: (String) -> Unit
 ) {
     val extra = LocalHKPayColors.current
     var showOnlyAvailable by remember { mutableStateOf(false) }
@@ -98,6 +101,19 @@ fun CardStoreScreen(
                             onClick = { showOnlyAvailable = true },
                             label = { Text("Available Only") }
                         )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = { onOpenCardSelector("") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("store_open_pager_selector_button"),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(Icons.Rounded.Palette, contentDescription = null, tint = extra.cyanGlow)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Swipe & Select Card Designs (Pager)")
                     }
                 }
             }

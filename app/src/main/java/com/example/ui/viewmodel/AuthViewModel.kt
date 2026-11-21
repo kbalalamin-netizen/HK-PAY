@@ -110,7 +110,8 @@ class AuthViewModel(
         fullName: String,
         email: String,
         password: String,
-        confirmPassword: String
+        confirmPassword: String,
+        referralCode: String = ""
     ) {
         if (fullName.trim().length < 2) {
             _uiState.update { it.copy(errorMessage = "Please enter your full legal name.") }
@@ -131,7 +132,7 @@ class AuthViewModel(
 
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null, infoMessage = null) }
-            authRepository.signUp(fullName, email, password)
+            authRepository.signUp(fullName, email, password, referralCode)
                 .onSuccess { user ->
                     _uiState.update {
                         it.copy(

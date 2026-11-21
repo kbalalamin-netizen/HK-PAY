@@ -30,12 +30,15 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.CameraAlt
+import androidx.compose.material.icons.rounded.CardGiftcard
 import androidx.compose.material.icons.rounded.CurrencyExchange
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.LockReset
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.PlayLesson
 import androidx.compose.material.icons.rounded.SupportAgent
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.AlertDialog
@@ -61,11 +64,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.fragment.app.FragmentActivity
 import coil.compose.AsyncImage
 import com.example.data.model.NotificationPreferences
 import com.example.data.model.ThemeMode
@@ -76,17 +81,22 @@ import com.example.ui.components.HKPayTopBar
 import com.example.ui.components.StatusBadge
 import com.example.ui.theme.LocalHKPayColors
 import com.example.ui.viewmodel.MainDashboardState
+import com.example.util.BiometricHelper
 import com.example.util.FormatUtils
 
 @Composable
 fun ProfileScreen(
     state: MainDashboardState,
     themeMode: ThemeMode,
+    biometricEnabled: Boolean,
     onChangeTheme: (ThemeMode) -> Unit,
+    onToggleBiometric: (Boolean) -> Unit,
     onUploadPhoto: (Uri) -> Unit,
     onEditProfile: () -> Unit,
     onChangePassword: (String, String) -> Unit,
     onNavigateKyc: () -> Unit,
+    onNavigateReferrals: () -> Unit,
+    onNavigateTutorials: () -> Unit,
     onNavigateNotificationSettings: () -> Unit,
     onNavigateTransactions: () -> Unit,
     onNavigateCurrencyRates: () -> Unit,
@@ -96,6 +106,7 @@ fun ProfileScreen(
 ) {
     val extra = LocalHKPayColors.current
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     val profile = state.userProfile
 
     var showChangePasswordDialog by remember { mutableStateOf(false) }
@@ -215,14 +226,26 @@ fun ProfileScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(10.dp))
-                        CopyableChip(
-                            label = "User ID",
-                            value = profile.publicUserId,
-                            onCopy = {
-                                clipboard.setText(AnnotatedString(profile.publicUserId))
-                                onCopied("User ID copied")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            CopyableChip(
+                                label = "User ID",
+                                value = profile.publicUserId,
+                                onCopy = {
+                                    clipboard.setText(AnnotatedString(profile.publicUserId))
+                                    onCopied("User ID copied")
+                                }
+                            )
+                            if (profile.referralCode.isNotBlank()) {
+                                CopyableChip(
+                                    label = "Ref",
+                                    value = profile.referralCode,
+                                    onCopy = {
+                                        clipboard.setText(AnnotatedString(profile.referralCode))
+                                        onCopied("Referral code copied")
+                                    }
+                                )
                             }
-                        )
+                        }
                         Spacer(Modifier.height(12.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             StatusBadge(status = "Account: ${profile.accountStatus}")
@@ -236,6 +259,56 @@ fun ProfileScreen(
                     PriceLine("Phone", profile.phone.ifBlank { "Not set" })
                     PriceLine("Country", profile.country.ifBlank { "Bangladesh" })
                     PriceLine("Join Date", FormatUtils.formatDate(profile.joinDate))
+                    PriceLine("Available Fee Credit", FormatUtils.formatMoney(state.availableReferralCredit, "USD"))
+                }
+            }
+
+            item {
+                GlassCard {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            modifier = Modifier.weight(1f).padding(end = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Rounded.Fingerprint, contentDescription = null, tint = extra.cyanGlow)
+                            Spacer(Modifier.width(10.dp))
+                            Column {
+                                Text("Biometric Unlock", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    text = "Use Fingerprint or Face Unlock at launch and before sensitive actions",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = biometricEnabled,
+                            onCheckedChange = { wantEnable ->
+                                if (wantEnable) {
+                                    val activity = context as? FragmentActivity
+                                    if (activity != null) {
+                                        BiometricHelper.authenticate(
+                                            activity = activity,
+                                            title = "Enable Biometric Unlock",
+                                            subtitle = "Verify your fingerprint or face ID to turn on HK PAY lock",
+                                            negativeButtonText = "Cancel",
+                                            onSuccess = { onToggleBiometric(true) },
+                                            onError = { msg -> onCopied(msg) }
+                                        )
+                                    } else {
+                                        onCopied("Biometric prompt requires an active screen.")
+                                    }
+                                } else {
+                                    onToggleBiometric(false)
+                                }
+                            },
+                            modifier = Modifier.testTag("profile_biometric_switch")
+                        )
+                    }
                 }
             }
 
@@ -269,6 +342,20 @@ fun ProfileScreen(
                         testTag = "profile_edit_button"
                     )
                     ProfileActionRow(
+                        icon = Icons.Rounded.CardGiftcard,
+                        title = "Referral Program",
+                        subtitle = "Code: ${profile.referralCode.ifBlank { "HKR" }} • ${state.referrals.size} joined",
+                        onClick = onNavigateReferrals,
+                        testTag = "profile_referral_button"
+                    )
+                    ProfileActionRow(
+                        icon = Icons.Rounded.PlayLesson,
+                        title = "In-App Tutorials",
+                        subtitle = "Guided walkthrough for cards, orders, and KYC",
+                        onClick = onNavigateTutorials,
+                        testTag = "profile_tutorials_button"
+                    )
+                    ProfileActionRow(
                         icon = Icons.Rounded.VerifiedUser,
                         title = "KYC Verification",
                         subtitle = "Status: ${state.effectiveKycStatus}",
@@ -279,7 +366,21 @@ fun ProfileScreen(
                         icon = Icons.Rounded.LockReset,
                         title = "Change Password",
                         subtitle = "Update your account password securely",
-                        onClick = { showChangePasswordDialog = true },
+                        onClick = {
+                            val activity = context as? FragmentActivity
+                            if (biometricEnabled && activity != null) {
+                                BiometricHelper.authenticate(
+                                    activity = activity,
+                                    title = "Verify Identity",
+                                    subtitle = "Confirm biometrics before changing your password",
+                                    negativeButtonText = "Cancel",
+                                    onSuccess = { showChangePasswordDialog = true },
+                                    onError = { msg -> onCopied(msg) }
+                                )
+                            } else {
+                                showChangePasswordDialog = true
+                            }
+                        },
                         testTag = "profile_change_password_button"
                     )
                     ProfileActionRow(

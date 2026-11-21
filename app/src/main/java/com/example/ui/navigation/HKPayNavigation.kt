@@ -41,8 +41,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -50,6 +52,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -60,7 +63,9 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.example.data.model.ThemeMode
 import com.example.ui.components.HKPayBackdrop
+import com.example.ui.screens.BiometricLockScreen
 import com.example.ui.screens.BuyCardScreen
+import com.example.ui.screens.CardSelectionScreen
 import com.example.ui.screens.CardStoreScreen
 import com.example.ui.screens.CurrencyRatesScreen
 import com.example.ui.screens.DashboardScreen
@@ -75,18 +80,21 @@ import com.example.ui.screens.OrderDetailScreen
 import com.example.ui.screens.OrdersScreen
 import com.example.ui.screens.PaymentScreen
 import com.example.ui.screens.ProfileScreen
+import com.example.ui.screens.ReferralScreen
 import com.example.ui.screens.SignInScreen
 import com.example.ui.screens.SignUpScreen
 import com.example.ui.screens.SplashScreen
 import com.example.ui.screens.SupportDetailScreen
 import com.example.ui.screens.SupportScreen
 import com.example.ui.screens.TransactionHistoryScreen
+import com.example.ui.screens.TutorialsScreen
 import com.example.ui.screens.WelcomeScreen
 import com.example.ui.theme.LocalHKPayColors
 import com.example.ui.viewmodel.AuthSessionState
 import com.example.ui.viewmodel.AuthViewModel
 import com.example.ui.viewmodel.MainViewModel
 import com.example.ui.viewmodel.UiEvent
+import com.example.util.BiometricHelper
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
@@ -104,7 +112,8 @@ import kotlinx.serialization.Serializable
 @Serializable object ProfileRoute
 
 // Secondary Flow Routes
-@Serializable data class BuyCardRoute(val packageId: String)
+@Serializable data class CardSelectionRoute(val initialPackageId: String = "")
+@Serializable data class BuyCardRoute(val packageId: String, val selectedDesign: String = "")
 @Serializable data class PaymentRoute(val orderId: String)
 @Serializable data class OrderDetailRoute(val orderId: String)
 @Serializable object KycRoute
@@ -115,6 +124,8 @@ import kotlinx.serialization.Serializable
 @Serializable data class SupportDetailRoute(val ticketId: String)
 @Serializable object EditProfileRoute
 @Serializable object NotificationSettingsRoute
+@Serializable object TutorialsRoute
+@Serializable object ReferralRoute
 
 private data class TopLevelDestination(
     val route: Any,
@@ -140,6 +151,10 @@ fun HKPayAppRoot(
 ) {
     val sessionState by authViewModel.sessionState.collectAsStateWithLifecycle()
     val authUiState by authViewModel.uiState.collectAsStateWithLifecycle()
+    val biometricEnabled by mainViewModel.biometricEnabled.collectAsStateWithLifecycle()
+    val isBiometricUnlocked by mainViewModel.isBiometricUnlockedThisSession.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var biometricError by remember { mutableStateOf<String?>(null) }
 
     when (val session = sessionState) {
         is AuthSessionState.Splash -> {
@@ -171,14 +186,47 @@ fun HKPayAppRoot(
             LaunchedEffect(session.user.uid) {
                 mainViewModel.bindUser(session.user.uid)
             }
-            MainAuthenticatedHost(
-                mainViewModel = mainViewModel,
-                themeMode = themeMode,
-                onLogout = {
-                    mainViewModel.clearSession()
-                    authViewModel.signOut()
-                }
-            )
+
+            if (biometricEnabled && !isBiometricUnlocked) {
+                BiometricLockScreen(
+                    userEmail = session.user.email.orEmpty(),
+                    errorMessage = biometricError,
+                    onPromptBiometric = {
+                        val activity = context as? FragmentActivity
+                        if (activity != null) {
+                            biometricError = null
+                            BiometricHelper.authenticate(
+                                activity = activity,
+                                title = "HK PAY Biometric Unlock",
+                                subtitle = "Verify your fingerprint or face ID to continue",
+                                negativeButtonText = "Use Email & Password",
+                                onSuccess = { mainViewModel.unlockBiometrically() },
+                                onNegativeAction = {
+                                    mainViewModel.clearSession()
+                                    authViewModel.signOut()
+                                },
+                                onError = { msg -> biometricError = msg }
+                            )
+                        } else {
+                            biometricError = "Biometric prompt is unavailable in this view."
+                        }
+                    },
+                    onUsePasswordInstead = {
+                        mainViewModel.clearSession()
+                        authViewModel.signOut()
+                    }
+                )
+            } else {
+                MainAuthenticatedHost(
+                    mainViewModel = mainViewModel,
+                    themeMode = themeMode,
+                    biometricEnabled = biometricEnabled,
+                    onLogout = {
+                        mainViewModel.clearSession()
+                        authViewModel.signOut()
+                    }
+                )
+            }
         }
     }
 }
@@ -187,7 +235,7 @@ fun HKPayAppRoot(
 private fun AuthFlowHost(
     authUiState: com.example.ui.viewmodel.AuthUiState,
     onSignIn: (String, String) -> Unit,
-    onSignUp: (String, String, String, String) -> Unit,
+    onSignUp: (String, String, String, String, String) -> Unit,
     onForgotPassword: (String) -> Unit,
     onClearMessages: () -> Unit
 ) {
@@ -249,19 +297,20 @@ private fun AuthFlowHost(
 private fun MainAuthenticatedHost(
     mainViewModel: MainViewModel,
     themeMode: ThemeMode,
+    biometricEnabled: Boolean,
     onLogout: () -> Unit
 ) {
     val state by mainViewModel.state.collectAsStateWithLifecycle()
+    val tutorialCompleted by mainViewModel.tutorialCompleted.collectAsStateWithLifecycle()
     val navController = rememberNavController()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val extra = LocalHKPayColors.current
     val context = LocalContext.current
 
-    // Request runtime notification permission on Android 13+
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
-        onResult = { /* Graceful: FCM in-app feed remains active even if declined */ }
+        onResult = { }
     )
 
     LaunchedEffect(Unit) {
@@ -324,7 +373,7 @@ private fun MainAuthenticatedHost(
         }
     }
 
-    fun showCopied(message: String) {
+    fun showMessage(message: String) {
         scope.launch { snackbarHostState.showSnackbar(message) }
     }
 
@@ -408,7 +457,9 @@ private fun MainAuthenticatedHost(
                             composable<HomeRoute> {
                                 DashboardScreen(
                                     state = state,
+                                    tutorialCompleted = tutorialCompleted,
                                     onNavigateBuyCard = { navigateTopLevel(BuyStoreRoute) },
+                                    onNavigateCardSelection = { navController.navigate(CardSelectionRoute()) },
                                     onNavigateMyCards = { navigateTopLevel(CardsRoute) },
                                     onNavigateOrders = { navigateTopLevel(OrdersRoute) },
                                     onNavigateOrderDetail = { orderId -> navController.navigate(OrderDetailRoute(orderId)) },
@@ -418,23 +469,43 @@ private fun MainAuthenticatedHost(
                                     onNavigateNotifications = { navController.navigate(NotificationsRoute) },
                                     onNavigateCurrencyRates = { navController.navigate(CurrencyRatesRoute) },
                                     onNavigateKyc = { navController.navigate(KycRoute) },
-                                    onCopiedMessage = ::showCopied
+                                    onNavigateTutorials = { navController.navigate(TutorialsRoute) },
+                                    onNavigateReferrals = { navController.navigate(ReferralRoute) },
+                                    onCopiedMessage = ::showMessage
                                 )
                             }
 
                             composable<CardsRoute> {
                                 MyCardsScreen(
                                     state = state,
+                                    biometricEnabled = biometricEnabled,
                                     onRevealToggle = mainViewModel::toggleCardSensitiveData,
                                     onNavigateStore = { navigateTopLevel(BuyStoreRoute) },
-                                    onCopied = ::showCopied
+                                    onCopied = ::showMessage
                                 )
                             }
 
                             composable<BuyStoreRoute> {
                                 CardStoreScreen(
                                     state = state,
-                                    onSelectPackage = { pkg -> navController.navigate(BuyCardRoute(pkg.id)) }
+                                    onSelectPackage = { pkg ->
+                                        navController.navigate(CardSelectionRoute(pkg.id))
+                                    },
+                                    onOpenCardSelector = { pkgId ->
+                                        navController.navigate(CardSelectionRoute(pkgId))
+                                    }
+                                )
+                            }
+
+                            composable<CardSelectionRoute> { backStackEntry ->
+                                val args = backStackEntry.toRoute<CardSelectionRoute>()
+                                CardSelectionScreen(
+                                    state = state,
+                                    initialPackageId = args.initialPackageId,
+                                    onBack = { navController.popBackStack() },
+                                    onProceedToBuy = { packageId, designName ->
+                                        navController.navigate(BuyCardRoute(packageId, designName))
+                                    }
                                 )
                             }
 
@@ -450,17 +521,21 @@ private fun MainAuthenticatedHost(
                                 ProfileScreen(
                                     state = state,
                                     themeMode = themeMode,
+                                    biometricEnabled = biometricEnabled,
                                     onChangeTheme = mainViewModel::setThemeMode,
+                                    onToggleBiometric = mainViewModel::setBiometricEnabled,
                                     onUploadPhoto = mainViewModel::uploadProfilePhoto,
                                     onEditProfile = { navController.navigate(EditProfileRoute) },
                                     onChangePassword = mainViewModel::changePassword,
                                     onNavigateKyc = { navController.navigate(KycRoute) },
+                                    onNavigateReferrals = { navController.navigate(ReferralRoute) },
+                                    onNavigateTutorials = { navController.navigate(TutorialsRoute) },
                                     onNavigateNotificationSettings = { navController.navigate(NotificationSettingsRoute) },
                                     onNavigateTransactions = { navController.navigate(TransactionsRoute) },
                                     onNavigateCurrencyRates = { navController.navigate(CurrencyRatesRoute) },
                                     onNavigateSupport = { navController.navigate(SupportRoute) },
                                     onLogout = onLogout,
-                                    onCopied = ::showCopied
+                                    onCopied = ::showMessage
                                 )
                             }
 
@@ -469,7 +544,9 @@ private fun MainAuthenticatedHost(
                                 val pkg = state.cardPackages.find { it.id == args.packageId }
                                 BuyCardScreen(
                                     cardPackage = pkg,
+                                    selectedDesign = args.selectedDesign,
                                     state = state,
+                                    biometricEnabled = biometricEnabled,
                                     onBack = { navController.popBackStack() },
                                     onConfirmOrder = mainViewModel::createOrder
                                 )
@@ -481,9 +558,10 @@ private fun MainAuthenticatedHost(
                                 PaymentScreen(
                                     order = order,
                                     state = state,
+                                    biometricEnabled = biometricEnabled,
                                     onBack = { navController.popBackStack() },
                                     onSubmitPayment = mainViewModel::submitPayment,
-                                    onCopied = ::showCopied
+                                    onCopied = ::showMessage
                                 )
                             }
 
@@ -494,7 +572,7 @@ private fun MainAuthenticatedHost(
                                     order = order,
                                     onBack = { navController.popBackStack() },
                                     onPayNow = { orderId -> navController.navigate(PaymentRoute(orderId)) },
-                                    onCopied = ::showCopied
+                                    onCopied = ::showMessage
                                 )
                             }
 
@@ -565,6 +643,30 @@ private fun MainAuthenticatedHost(
                                         mainViewModel.updateNotificationPrefs(prefs)
                                         navController.popBackStack()
                                     }
+                                )
+                            }
+
+                            composable<TutorialsRoute> {
+                                TutorialsScreen(
+                                    onComplete = {
+                                        mainViewModel.setTutorialCompleted(true)
+                                        showMessage("Tutorials completed!")
+                                        navController.popBackStack()
+                                    },
+                                    onSkip = {
+                                        mainViewModel.setTutorialCompleted(true)
+                                        navController.popBackStack()
+                                    },
+                                    onBack = { navController.popBackStack() }
+                                )
+                            }
+
+                            composable<ReferralRoute> {
+                                ReferralScreen(
+                                    state = state,
+                                    onBack = { navController.popBackStack() },
+                                    onClaimCode = mainViewModel::claimReferralCode,
+                                    onCopied = ::showMessage
                                 )
                             }
                         }

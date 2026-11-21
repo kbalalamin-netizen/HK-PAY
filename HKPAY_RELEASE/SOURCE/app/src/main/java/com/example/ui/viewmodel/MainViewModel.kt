@@ -12,6 +12,8 @@ import com.example.data.model.CurrencyRate
 import com.example.data.model.IssuedCard
 import com.example.data.model.KycSubmission
 import com.example.data.model.NotificationPreferences
+import com.example.data.model.ReferralRecord
+import com.example.data.model.ReferralReward
 import com.example.data.model.SecureCardDisplayData
 import com.example.data.model.SupportTicket
 import com.example.data.model.ThemeMode
@@ -46,9 +48,17 @@ data class MainDashboardState(
     val transactions: List<TransactionRecord> = emptyList(),
     val notifications: List<AppNotification> = emptyList(),
     val supportTickets: List<SupportTicket> = emptyList(),
+    val referrals: List<ReferralRecord> = emptyList(),
+    val referralRewards: List<ReferralReward> = emptyList(),
     val revealedCardData: Map<String, SecureCardDisplayData> = emptyMap(),
     val revealingCardId: String? = null
 ) {
+    val availableReferralCredit: Double
+        get() = referralRewards.filter { it.status == "Available" }.sumOf { it.amount }
+
+    val totalReferralEarned: Double
+        get() = referralRewards.sumOf { it.amount }
+
     val unreadNotificationsCount: Int
         get() = notifications.count { !it.isRead }
 
@@ -88,6 +98,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = ThemeMode.DARK
     )
+
+    val biometricEnabled: StateFlow<Boolean> = themeRepository.biometricEnabled.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = false
+    )
+
+    val tutorialCompleted: StateFlow<Boolean> = themeRepository.tutorialCompleted.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = true
+    )
+
+    private val _isBiometricUnlockedThisSession = MutableStateFlow(false)
+    val isBiometricUnlockedThisSession: StateFlow<Boolean> = _isBiometricUnlockedThisSession.asStateFlow()
 
     private val _state = MutableStateFlow(MainDashboardState())
     val state: StateFlow<MainDashboardState> = _state.asStateFlow()
@@ -158,13 +183,69 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _state.update { it.copy(supportTickets = tickets) }
             }
         }
+        observationJobs += viewModelScope.launch {
+            repository.observeReferrals(uid).collect { referrals ->
+                _state.update { it.copy(referrals = referrals) }
+            }
+        }
+        observationJobs += viewModelScope.launch {
+            repository.observeReferralRewards(uid).collect { rewards ->
+                _state.update { it.copy(referralRewards = rewards) }
+            }
+        }
     }
 
     fun clearSession() {
         observationJobs.forEach { it.cancel() }
         observationJobs.clear()
         boundUid = null
+        _isBiometricUnlockedThisSession.value = false
         _state.value = MainDashboardState(isLoading = false)
+    }
+
+    fun unlockBiometrically() {
+        _isBiometricUnlockedThisSession.value = true
+    }
+
+    fun setBiometricEnabled(enabled: Boolean) {
+        val uid = boundUid
+        viewModelScope.launch {
+            themeRepository.setBiometricEnabled(enabled)
+            if (enabled) {
+                _isBiometricUnlockedThisSession.value = true
+            }
+            if (uid != null) {
+                repository.setBiometricPreference(uid, enabled)
+            }
+            _events.emit(
+                UiEvent.ShowMessage(
+                    if (enabled) "Biometric authentication enabled" else "Biometric authentication disabled"
+                )
+            )
+        }
+    }
+
+    fun setTutorialCompleted(completed: Boolean) {
+        viewModelScope.launch {
+            themeRepository.setTutorialCompleted(completed)
+        }
+    }
+
+    fun claimReferralCode(code: String) {
+        val uid = boundUid ?: return
+        val name = _state.value.userProfile.fullName
+        viewModelScope.launch {
+            _state.update { it.copy(isSubmitting = true) }
+            repository.claimReferralCode(uid, name, code)
+                .onSuccess {
+                    _state.update { it.copy(isSubmitting = false) }
+                    _events.emit(UiEvent.ShowMessage("Referral bonus unlocked! $5.00 fee credit added."))
+                }
+                .onFailure { err ->
+                    _state.update { it.copy(isSubmitting = false) }
+                    _events.emit(UiEvent.ShowMessage(err.localizedMessage ?: "Unable to redeem referral code.", true))
+                }
+        }
     }
 
     private fun syncFcmToken(uid: String) {
@@ -187,6 +268,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun createOrder(
         cardPackage: CardPackage,
+        selectedDesign: String,
+        applyReferralCredit: Boolean,
         customerName: String,
         phoneNumber: String,
         country: String,
@@ -197,11 +280,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         orderNotes: String
     ) {
         val uid = boundUid ?: return
+        val availableRewards = _state.value.referralRewards.filter { it.status == "Available" }
+        val discount = if (applyReferralCredit) {
+            availableRewards.sumOf { it.amount }.coerceAtMost(cardPackage.computedTotal)
+        } else 0.0
+        val rewardIds = if (discount > 0.0) availableRewards.map { it.rewardId } else emptyList()
+
         viewModelScope.launch {
             _state.update { it.copy(isSubmitting = true) }
             repository.createCardOrder(
                 uid = uid,
                 cardPackage = cardPackage,
+                selectedDesign = selectedDesign,
+                referralDiscountApplied = discount,
+                availableRewardIdsToMark = rewardIds,
                 customerName = customerName,
                 phoneNumber = phoneNumber,
                 country = country,

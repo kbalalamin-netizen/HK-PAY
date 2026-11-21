@@ -24,11 +24,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.AddCard
+import androidx.compose.material.icons.rounded.CardGiftcard
 import androidx.compose.material.icons.rounded.CreditCard
 import androidx.compose.material.icons.rounded.CurrencyExchange
 import androidx.compose.material.icons.rounded.LocalShipping
 import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.PlayLesson
 import androidx.compose.material.icons.rounded.SupportAgent
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.Badge
@@ -68,7 +71,9 @@ import com.example.util.FormatUtils
 @Composable
 fun DashboardScreen(
     state: MainDashboardState,
+    tutorialCompleted: Boolean,
     onNavigateBuyCard: () -> Unit,
+    onNavigateCardSelection: () -> Unit,
     onNavigateMyCards: () -> Unit,
     onNavigateOrders: () -> Unit,
     onNavigateOrderDetail: (String) -> Unit,
@@ -78,6 +83,8 @@ fun DashboardScreen(
     onNavigateNotifications: () -> Unit,
     onNavigateCurrencyRates: () -> Unit,
     onNavigateKyc: () -> Unit,
+    onNavigateTutorials: () -> Unit,
+    onNavigateReferrals: () -> Unit,
     onCopiedMessage: (String) -> Unit
 ) {
     val extra = LocalHKPayColors.current
@@ -323,7 +330,7 @@ fun DashboardScreen(
                 }
             }
 
-            // Quick Actions Grid (6 required actions)
+            // Quick Actions Grid
             item {
                 Column {
                     Text(
@@ -333,9 +340,12 @@ fun DashboardScreen(
                     Spacer(Modifier.height(10.dp))
                     val actions = listOf(
                         Triple("Buy Physical Card", Icons.Rounded.AddCard, onNavigateBuyCard),
+                        Triple("Card Designs", Icons.Rounded.Palette, onNavigateCardSelection),
                         Triple("My Cards", Icons.Rounded.CreditCard, onNavigateMyCards),
                         Triple("Track Order", Icons.Rounded.LocalShipping, onNavigateOrders),
                         Triple("Transactions", Icons.AutoMirrored.Rounded.ReceiptLong, onNavigateTransactions),
+                        Triple("Refer & Earn", Icons.Rounded.CardGiftcard, onNavigateReferrals),
+                        Triple("App Guide", Icons.Rounded.PlayLesson, onNavigateTutorials),
                         Triple("Profile", Icons.Rounded.Person, onNavigateProfile),
                         Triple("Support", Icons.Rounded.SupportAgent, onNavigateSupport)
                     )
@@ -355,6 +365,57 @@ fun DashboardScreen(
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            // Referral & Tutorial Highlight Row
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    GlassCard(
+                        onClick = onNavigateReferrals,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("dashboard_referral_card"),
+                        contentPadding = PaddingValues(14.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.CardGiftcard, contentDescription = null, tint = extra.cyanGlow)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Referral Bonus", style = MaterialTheme.typography.titleSmall)
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = if (state.availableReferralCredit > 0.0) {
+                                "${FormatUtils.formatMoney(state.availableReferralCredit, "USD")} credit available"
+                            } else {
+                                "Code: ${state.userProfile.referralCode.ifBlank { "HKR" }}"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = extra.success
+                        )
+                    }
+                    GlassCard(
+                        onClick = onNavigateTutorials,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("dashboard_tutorial_card"),
+                        contentPadding = PaddingValues(14.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.PlayLesson, contentDescription = null, tint = extra.cyanGlow)
+                            Spacer(Modifier.width(8.dp))
+                            Text("HK PAY Guide", style = MaterialTheme.typography.titleSmall)
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = if (!tutorialCompleted) "4-step walkthrough" else "Replay app tutorials",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = extra.cyanGlow
+                        )
                     }
                 }
             }

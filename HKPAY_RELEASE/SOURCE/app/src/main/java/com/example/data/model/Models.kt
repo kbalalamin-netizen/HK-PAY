@@ -63,6 +63,11 @@ data class UserProfile(
     val kycStatus: String = "Not Submitted",
     val accountStatus: String = "Active",
     val fcmToken: String = "",
+    val biometricEnabled: Boolean = false,
+    val referralCode: String = "",
+    val referredBy: String = "",
+    val referredByCode: String = "",
+    val rewardCredits: Double = 0.0,
     val notificationPrefs: NotificationPreferences = NotificationPreferences()
 )
 
@@ -104,8 +109,10 @@ data class CardOrder(
     val cardPrice: Double = 0.0,
     val issuingFee: Double = 0.0,
     val deliveryFee: Double = 0.0,
+    val referralDiscountApplied: Double = 0.0,
     val totalPrice: Double = 0.0,
     val currency: String = "USD",
+    val selectedDesign: String = "",
     val customerName: String = "",
     val phoneNumber: String = "",
     val country: String = "",
@@ -244,3 +251,33 @@ data class SupportTicket(
     val updatedAt: Long = 0L,
     val replies: List<TicketReply> = emptyList()
 )
+
+data class ReferralRecord(
+    val referredUserId: String = "",
+    val referredName: String = "",
+    val rewardAmount: Double = 5.0,
+    val refereeBonus: Double = 5.0,
+    val status: String = "Credited",
+    val createdAt: Long = 0L
+)
+
+data class ReferralReward(
+    val rewardId: String = "",
+    val title: String = "",
+    val amount: Double = 0.0,
+    val currency: String = "USD",
+    val type: String = "Referral Bonus",
+    val status: String = "Available",
+    val createdAt: Long = 0L
+)
+
+data class CardDesignOption(
+    val id: String,
+    val name: String,
+    val finishLabel: String,
+    val description: String,
+    val gradientStartHex: Long,
+    val gradientEndHex: Long,
+    val accentHex: Long
+)
+

@@ -12,6 +12,8 @@ import com.example.data.model.KycSubmission
 import com.example.data.model.NotificationPreferences
 import com.example.data.model.OrderStatusEvent
 import com.example.data.model.PaymentMethodConfig
+import com.example.data.model.ReferralRecord
+import com.example.data.model.ReferralReward
 import com.example.data.model.SecureCardDisplayData
 import com.example.data.model.SupportTicket
 import com.example.data.model.TicketReply
@@ -53,12 +55,14 @@ class HKPayRepository(
     suspend fun ensureUserProfileExists(uid: String, email: String, fullName: String) {
         val ref = database.reference.child("users").child(uid)
         val snap = runCatching { ref.get().awaitResult() }.getOrNull()
+        val fallbackCode = AuthRepository.generateReferralCode(uid)
         if (snap == null || !snap.exists()) {
             val now = System.currentTimeMillis()
+            val cleanName = fullName.ifBlank { email.substringBefore("@") }
             val payload = mapOf(
                 "uid" to uid,
                 "publicUserId" to AuthRepository.generatePublicUserId(uid),
-                "fullName" to fullName.ifBlank { email.substringBefore("@") },
+                "fullName" to cleanName,
                 "email" to email,
                 "phone" to "",
                 "country" to "Bangladesh",
@@ -66,6 +70,11 @@ class HKPayRepository(
                 "joinDate" to now,
                 "kycStatus" to "Not Submitted",
                 "accountStatus" to "Active",
+                "biometricEnabled" to false,
+                "referralCode" to fallbackCode,
+                "referredBy" to "",
+                "referredByCode" to "",
+                "rewardCredits" to 0.0,
                 "notificationPrefs" to mapOf(
                     "orderUpdates" to true,
                     "securityAlerts" to true,
@@ -74,6 +83,20 @@ class HKPayRepository(
                 )
             )
             runCatching { ref.setValue(payload).awaitResult() }
+            runCatching {
+                database.reference.child("referral_codes").child(fallbackCode).setValue(
+                    mapOf("uid" to uid, "ownerName" to cleanName, "createdAt" to now)
+                ).awaitResult()
+            }
+        } else if (snap.stringValue("referralCode").isBlank()) {
+            val now = System.currentTimeMillis()
+            val ownerName = snap.stringValue("fullName", default = fullName.ifBlank { "HK PAY Member" })
+            runCatching { ref.child("referralCode").setValue(fallbackCode).awaitResult() }
+            runCatching {
+                database.reference.child("referral_codes").child(fallbackCode).setValue(
+                    mapOf("uid" to uid, "ownerName" to ownerName, "createdAt" to now)
+                ).awaitResult()
+            }
         }
     }
 
@@ -161,6 +184,139 @@ class HKPayRepository(
             .catch { emit(emptyList()) }
     }
 
+    fun observeReferrals(uid: String): Flow<List<ReferralRecord>> {
+        return database.reference.child("referrals").child(uid)
+            .observeSnapshots()
+            .map { snap ->
+                snap.children.mapNotNull { child ->
+                    val name = child.stringValue("referredName")
+                    val id = child.stringValue("referredUserId", default = child.key.orEmpty())
+                    if (id.isBlank()) null
+                    else ReferralRecord(
+                        referredUserId = id,
+                        referredName = name.ifBlank { "HK PAY Member" },
+                        rewardAmount = child.doubleValue("rewardAmount", default = AuthRepository.REFERRAL_BONUS_USD),
+                        refereeBonus = child.doubleValue("refereeBonus", default = AuthRepository.REFERRAL_BONUS_USD),
+                        status = child.stringValue("status", default = "Credited"),
+                        createdAt = child.longValue("createdAt")
+                    )
+                }.sortedByDescending { it.createdAt }
+            }
+            .catch { emit(emptyList()) }
+    }
+
+    fun observeReferralRewards(uid: String): Flow<List<ReferralReward>> {
+        return database.reference.child("referral_rewards").child(uid)
+            .observeSnapshots()
+            .map { snap ->
+                snap.children.mapNotNull { child ->
+                    val id = child.stringValue("rewardId", default = child.key.orEmpty())
+                    if (id.isBlank()) null
+                    else ReferralReward(
+                        rewardId = id,
+                        title = child.stringValue("title", default = "Referral Bonus"),
+                        amount = child.doubleValue("amount"),
+                        currency = child.stringValue("currency", default = "USD"),
+                        type = child.stringValue("type", default = "Referral Bonus"),
+                        status = child.stringValue("status", default = "Available"),
+                        createdAt = child.longValue("createdAt")
+                    )
+                }.sortedByDescending { it.createdAt }
+            }
+            .catch { emit(emptyList()) }
+    }
+
+    suspend fun setBiometricPreference(uid: String, enabled: Boolean) {
+        if (uid.isBlank()) return
+        runCatching {
+            database.reference.child("users").child(uid).child("biometricEnabled").setValue(enabled).awaitResult()
+        }
+    }
+
+    suspend fun claimReferralCode(
+        uid: String,
+        userFullName: String,
+        codeInput: String
+    ): Result<Unit> = runCatching {
+        val cleanCode = codeInput.trim().uppercase(Locale.US)
+        require(cleanCode.isNotBlank()) { "Please enter a referral code." }
+
+        val userSnap = database.reference.child("users").child(uid).get().awaitResult()
+        if (userSnap.stringValue("referredBy").isNotBlank()) {
+            error("You have already redeemed a referral code on this account.")
+        }
+
+        val codeSnap = database.reference.child("referral_codes").child(cleanCode).get().awaitResult()
+        if (!codeSnap.exists()) {
+            error("Referral code \"$cleanCode\" was not found.")
+        }
+        val referrerUid = codeSnap.child("uid").value?.toString().orEmpty()
+        if (referrerUid.isBlank() || referrerUid == uid) {
+            error("You cannot use your own referral code.")
+        }
+
+        val now = System.currentTimeMillis()
+        database.reference.child("users").child(uid).updateChildren(
+            mapOf(
+                "referredBy" to referrerUid,
+                "referredByCode" to cleanCode
+            )
+        ).awaitResult()
+
+        database.reference.child("referrals").child(referrerUid).child(uid).setValue(
+            mapOf(
+                "referredUserId" to uid,
+                "referredName" to userFullName.ifBlank { "HK PAY Member" },
+                "rewardAmount" to AuthRepository.REFERRAL_BONUS_USD,
+                "refereeBonus" to AuthRepository.REFERRAL_BONUS_USD,
+                "status" to "Credited",
+                "createdAt" to now
+            )
+        ).awaitResult()
+
+        database.reference.child("referral_rewards").child(uid).child("WELCOME_${uid.take(6)}").setValue(
+            mapOf(
+                "rewardId" to "WELCOME_${uid.take(6)}",
+                "sourceUid" to uid,
+                "title" to "Welcome Referral Bonus ($cleanCode)",
+                "amount" to AuthRepository.REFERRAL_BONUS_USD,
+                "currency" to "USD",
+                "type" to "Welcome Fee Credit",
+                "status" to "Available",
+                "createdAt" to now
+            )
+        ).awaitResult()
+
+        val referrerRewardId = "REF_${uid.take(8)}"
+        database.reference.child("referral_rewards").child(referrerUid).child(referrerRewardId).setValue(
+            mapOf(
+                "rewardId" to referrerRewardId,
+                "sourceUid" to uid,
+                "title" to "Friend Joined: ${userFullName.ifBlank { "HK PAY Member" }}",
+                "amount" to AuthRepository.REFERRAL_BONUS_USD,
+                "currency" to "USD",
+                "type" to "Referral Bonus",
+                "status" to "Available",
+                "createdAt" to now
+            )
+        ).awaitResult()
+
+        val notifRef = database.reference.child("notifications").child(referrerUid).push()
+        notifRef.setValue(
+            mapOf(
+                "id" to (notifRef.key ?: ""),
+                "userId" to referrerUid,
+                "title" to "Referral Reward Earned!",
+                "message" to "${userFullName.ifBlank { "A friend" }} redeemed your referral code ($cleanCode). You received $${String.format(Locale.US, "%.2f", AuthRepository.REFERRAL_BONUS_USD)} fee credit.",
+                "type" to "Referral Bonus",
+                "referenceId" to referrerRewardId,
+                "isRead" to false,
+                "createdAt" to now
+            )
+        ).awaitResult()
+        Unit
+    }
+
     suspend fun updateProfile(
         uid: String,
         fullName: String,
@@ -209,6 +365,9 @@ class HKPayRepository(
     suspend fun createCardOrder(
         uid: String,
         cardPackage: CardPackage,
+        selectedDesign: String,
+        referralDiscountApplied: Double,
+        availableRewardIdsToMark: List<String>,
         customerName: String,
         phoneNumber: String,
         country: String,
@@ -220,12 +379,13 @@ class HKPayRepository(
     ): Result<String> = runCatching {
         val now = System.currentTimeMillis()
         val orderId = "ORD-${now.toString().takeLast(6)}-${UUID.randomUUID().toString().take(4).uppercase(Locale.US)}"
-        val total = cardPackage.computedTotal
+        val appliedDiscount = referralDiscountApplied.coerceIn(0.0, cardPackage.computedTotal)
+        val total = (cardPackage.computedTotal - appliedDiscount).coerceAtLeast(0.0)
 
         val initialTimeline = mapOf(
             "0" to mapOf(
                 "status" to "Order Placed",
-                "note" to "Physical card order created for ${cardPackage.name}.",
+                "note" to "Physical card order created for ${cardPackage.name}${if (selectedDesign.isNotBlank()) " ($selectedDesign)" else ""}.",
                 "timestamp" to now
             )
         )
@@ -237,10 +397,12 @@ class HKPayRepository(
             "packageName" to cardPackage.name,
             "cardType" to cardPackage.cardType,
             "network" to cardPackage.network,
+            "selectedDesign" to selectedDesign,
             "usdPackage" to cardPackage.usdPackage,
             "cardPrice" to cardPackage.cardPrice,
             "issuingFee" to cardPackage.issuingFee,
             "deliveryFee" to cardPackage.deliveryFee,
+            "referralDiscountApplied" to appliedDiscount,
             "totalPrice" to total,
             "currency" to cardPackage.currency,
             "customerName" to customerName.trim(),
@@ -266,6 +428,15 @@ class HKPayRepository(
         )
 
         database.reference.child("orders").child(uid).child(orderId).setValue(orderMap).awaitResult()
+
+        if (appliedDiscount > 0.0 && availableRewardIdsToMark.isNotEmpty()) {
+            availableRewardIdsToMark.forEach { rewardId ->
+                runCatching {
+                    database.reference.child("referral_rewards").child(uid).child(rewardId)
+                        .child("status").setValue("Applied to $orderId").awaitResult()
+                }
+            }
+        }
 
         val txId = "TXN-${now.toString().takeLast(6)}-${UUID.randomUUID().toString().take(4).uppercase(Locale.US)}"
         val txMap = mapOf(
@@ -536,6 +707,11 @@ class HKPayRepository(
             kycStatus = snap.stringValue("kycStatus", default = "Not Submitted"),
             accountStatus = snap.stringValue("accountStatus", default = "Active"),
             fcmToken = snap.stringValue("fcmToken"),
+            biometricEnabled = snap.boolValue("biometricEnabled", default = false),
+            referralCode = snap.stringValue("referralCode", default = AuthRepository.generateReferralCode(uid)),
+            referredBy = snap.stringValue("referredBy"),
+            referredByCode = snap.stringValue("referredByCode"),
+            rewardCredits = snap.doubleValue("rewardCredits"),
             notificationPrefs = NotificationPreferences(
                 orderUpdates = prefsSnap.boolValue("orderUpdates", default = true),
                 securityAlerts = prefsSnap.boolValue("securityAlerts", default = true),
@@ -596,8 +772,10 @@ class HKPayRepository(
             cardPrice = snap.doubleValue("cardPrice"),
             issuingFee = snap.doubleValue("issuingFee"),
             deliveryFee = snap.doubleValue("deliveryFee"),
+            referralDiscountApplied = snap.doubleValue("referralDiscountApplied"),
             totalPrice = snap.doubleValue("totalPrice"),
             currency = snap.stringValue("currency", default = "USD"),
+            selectedDesign = snap.stringValue("selectedDesign"),
             customerName = snap.stringValue("customerName"),
             phoneNumber = snap.stringValue("phoneNumber"),
             country = snap.stringValue("country"),

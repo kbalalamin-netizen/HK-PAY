@@ -32,8 +32,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.CardGiftcard
 import androidx.compose.material.icons.rounded.CreditCard
 import androidx.compose.material.icons.rounded.Email
+import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MarkEmailRead
 import androidx.compose.material.icons.rounded.Person
@@ -426,7 +428,7 @@ fun SignInScreen(
 @Composable
 fun SignUpScreen(
     uiState: AuthUiState,
-    onSignUp: (String, String, String, String) -> Unit,
+    onSignUp: (String, String, String, String, String) -> Unit,
     onNavigateSignIn: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -434,6 +436,7 @@ fun SignUpScreen(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
+    var referralCode by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
 
     HKPayBackdrop {
@@ -544,17 +547,31 @@ fun SignUpScreen(
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Password,
-                            imeAction = ImeAction.Done
+                            imeAction = ImeAction.Next
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("signup_confirm_password_input"),
                         shape = RoundedCornerShape(14.dp)
                     )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = referralCode,
+                        onValueChange = { referralCode = it.uppercase() },
+                        label = { Text("Referral Code (Optional)") },
+                        placeholder = { Text("e.g. HKR123456 — $5.00 fee credit") },
+                        leadingIcon = { Icon(Icons.Rounded.CardGiftcard, contentDescription = null) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("signup_referral_input"),
+                        shape = RoundedCornerShape(14.dp)
+                    )
                     Spacer(Modifier.height(18.dp))
                     HKPayPrimaryButton(
                         text = "Create Account",
-                        onClick = { onSignUp(fullName, email, password, confirmPassword) },
+                        onClick = { onSignUp(fullName, email, password, confirmPassword, referralCode) },
                         isLoading = uiState.isLoading,
                         testTag = "signup_submit_button"
                     )
@@ -781,3 +798,93 @@ private fun AuthFeedbackBanner(
         }
     }
 }
+
+@Composable
+fun BiometricLockScreen(
+    userEmail: String,
+    errorMessage: String?,
+    onPromptBiometric: () -> Unit,
+    onUsePasswordInstead: () -> Unit
+) {
+    val extra = LocalHKPayColors.current
+
+    LaunchedEffect(Unit) {
+        onPromptBiometric()
+    }
+
+    HKPayBackdrop {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .safeDrawingPadding()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Column(
+                modifier = Modifier.widthIn(max = 460.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.hk_pay_logo),
+                    contentDescription = "HK PAY Logo",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(88.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                )
+                Spacer(Modifier.height(20.dp))
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(CircleShape)
+                        .background(extra.electricBlue.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Fingerprint,
+                        contentDescription = "Biometric unlock",
+                        tint = extra.cyanGlow,
+                        modifier = Modifier.size(40.dp)
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "Unlock HK PAY",
+                    style = MaterialTheme.typography.headlineMedium,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "Confirm your fingerprint or face ID to access $userEmail",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(18.dp))
+                AuthFeedbackBanner(errorMessage = errorMessage, infoMessage = null)
+
+                GlassCard {
+                    HKPayPrimaryButton(
+                        text = "Unlock with Biometrics",
+                        onClick = onPromptBiometric,
+                        icon = Icons.Rounded.Fingerprint,
+                        testTag = "biometric_unlock_button"
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedButton(
+                        onClick = onUsePasswordInstead,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("biometric_use_password_button"),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("Sign In with Email & Password")
+                    }
+                }
+            }
+        }
+    }
+}
+

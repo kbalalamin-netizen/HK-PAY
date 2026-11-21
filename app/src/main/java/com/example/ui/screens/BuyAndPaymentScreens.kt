@@ -39,6 +39,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -48,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -57,6 +59,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.fragment.app.FragmentActivity
 import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.model.CardOrder
@@ -71,15 +74,20 @@ import com.example.ui.components.SecurityNoticeBanner
 import com.example.ui.components.StatusBadge
 import com.example.ui.theme.LocalHKPayColors
 import com.example.ui.viewmodel.MainDashboardState
+import com.example.util.BiometricHelper
 import com.example.util.FormatUtils
 
 @Composable
 fun BuyCardScreen(
     cardPackage: CardPackage?,
+    selectedDesign: String = "",
     state: MainDashboardState,
+    biometricEnabled: Boolean,
     onBack: () -> Unit,
     onConfirmOrder: (
         pkg: CardPackage,
+        selectedDesign: String,
+        applyReferralCredit: Boolean,
         customerName: String,
         phoneNumber: String,
         country: String,
@@ -91,6 +99,13 @@ fun BuyCardScreen(
     ) -> Unit
 ) {
     val extra = LocalHKPayColors.current
+    val context = LocalContext.current
+    val designObj = remember(selectedDesign) {
+        HKPayCardDesigns.firstOrNull { it.name.equals(selectedDesign, ignoreCase = true) }
+    }
+    var applyReferralCredit by remember(state.availableReferralCredit) {
+        mutableStateOf(state.availableReferralCredit > 0.0)
+    }
 
     var customerName by remember(state.userProfile.fullName) { mutableStateOf(state.userProfile.fullName) }
     var phoneNumber by remember(state.userProfile.phone) { mutableStateOf(state.userProfile.phone) }
@@ -133,25 +148,67 @@ fun BuyCardScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     HKPayPhysicalCardVisual(
-                        cardName = cardPackage.name,
+                        cardName = buildString {
+                            append(cardPackage.name)
+                            if (selectedDesign.isNotBlank()) append(" • $selectedDesign")
+                        },
                         cardholderName = customerName.ifBlank { "CARDHOLDER NAME" },
                         cardType = cardPackage.cardType,
                         network = cardPackage.network,
                         maskedOrFullNumber = "••••  ••••  ••••  ••••",
                         expiryDate = "MM/YY",
-                        statusBadgeText = "Order Preview"
+                        statusBadgeText = "Order Preview",
+                        gradientStart = designObj?.let { Color(it.gradientStartHex) },
+                        gradientEnd = designObj?.let { Color(it.gradientEndHex) },
+                        accentColor = designObj?.let { Color(it.accentHex) }
                     )
+
+                    val appliedDiscount = if (applyReferralCredit) {
+                        state.availableReferralCredit.coerceAtMost(cardPackage.computedTotal)
+                    } else 0.0
+                    val finalTotal = (cardPackage.computedTotal - appliedDiscount).coerceAtLeast(0.0)
 
                     GlassCard {
                         Text(text = "Price Breakdown", style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(10.dp))
                         PriceLine("Card Package", cardPackage.name)
+                        if (selectedDesign.isNotBlank()) {
+                            PriceLine("Selected Design", selectedDesign)
+                        }
                         if (cardPackage.usdPackage > 0.0) {
                             PriceLine("USD Package Value", FormatUtils.formatMoney(cardPackage.usdPackage, "USD"))
                         }
                         PriceLine("Card Price", FormatUtils.formatMoney(cardPackage.cardPrice, cardPackage.currency))
                         PriceLine("Issuing Fee", FormatUtils.formatMoney(cardPackage.issuingFee, cardPackage.currency))
                         PriceLine("Delivery Fee", FormatUtils.formatMoney(cardPackage.deliveryFee, cardPackage.currency))
+                        if (state.availableReferralCredit > 0.0) {
+                            Spacer(Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Apply Referral Credit",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = extra.success
+                                    )
+                                    Text(
+                                        text = "Available: ${FormatUtils.formatMoney(state.availableReferralCredit, "USD")}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = applyReferralCredit,
+                                    onCheckedChange = { applyReferralCredit = it }
+                                )
+                            }
+                            if (appliedDiscount > 0.0) {
+                                PriceLine("Referral Discount", "-${FormatUtils.formatMoney(appliedDiscount, cardPackage.currency)}")
+                            }
+                        }
                         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -159,7 +216,7 @@ fun BuyCardScreen(
                         ) {
                             Text("Final Total", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             Text(
-                                text = FormatUtils.formatMoney(cardPackage.computedTotal, cardPackage.currency),
+                                text = FormatUtils.formatMoney(finalTotal, cardPackage.currency),
                                 style = MaterialTheme.typography.titleLarge,
                                 color = extra.cyanGlow
                             )
@@ -265,7 +322,7 @@ fun BuyCardScreen(
                             Column {
                                 Text("Final Payable Amount", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text(
-                                    text = FormatUtils.formatMoney(cardPackage.computedTotal, cardPackage.currency),
+                                    text = FormatUtils.formatMoney(finalTotal, cardPackage.currency),
                                     style = MaterialTheme.typography.headlineMedium,
                                     color = extra.cyanGlow
                                 )
@@ -284,17 +341,34 @@ fun BuyCardScreen(
                                     postalCode.isBlank() -> validationError = "Postal code is required."
                                     else -> {
                                         validationError = null
-                                        onConfirmOrder(
-                                            cardPackage,
-                                            customerName,
-                                            phoneNumber,
-                                            country,
-                                            district,
-                                            cityUpazila,
-                                            address,
-                                            postalCode,
-                                            orderNotes
-                                        )
+                                        val submitAction = {
+                                            onConfirmOrder(
+                                                cardPackage,
+                                                selectedDesign,
+                                                applyReferralCredit,
+                                                customerName,
+                                                phoneNumber,
+                                                country,
+                                                district,
+                                                cityUpazila,
+                                                address,
+                                                postalCode,
+                                                orderNotes
+                                            )
+                                        }
+                                        val activity = context as? FragmentActivity
+                                        if (biometricEnabled && activity != null) {
+                                            BiometricHelper.authenticate(
+                                                activity = activity,
+                                                title = "Confirm Card Order",
+                                                subtitle = "Verify biometrics to authorize this physical card order",
+                                                negativeButtonText = "Cancel",
+                                                onSuccess = submitAction,
+                                                onError = { msg -> validationError = msg }
+                                            )
+                                        } else {
+                                            submitAction()
+                                        }
                                     }
                                 }
                             },
@@ -313,6 +387,7 @@ fun BuyCardScreen(
 fun PaymentScreen(
     order: CardOrder?,
     state: MainDashboardState,
+    biometricEnabled: Boolean,
     onBack: () -> Unit,
     onSubmitPayment: (
         order: CardOrder,
@@ -564,13 +639,28 @@ fun PaymentScreen(
                                     referenceCode.isBlank() -> formError = "Transaction reference ID is required."
                                     else -> {
                                         formError = null
-                                        onSubmitPayment(
-                                            order,
-                                            activeMethod.name,
-                                            senderNumber,
-                                            referenceCode,
-                                            proofUri
-                                        )
+                                        val payAction = {
+                                            onSubmitPayment(
+                                                order,
+                                                activeMethod.name,
+                                                senderNumber,
+                                                referenceCode,
+                                                proofUri
+                                            )
+                                        }
+                                        val activity = context as? FragmentActivity
+                                        if (biometricEnabled && activity != null) {
+                                            BiometricHelper.authenticate(
+                                                activity = activity,
+                                                title = "Authorize Payment Submission",
+                                                subtitle = "Verify fingerprint or face ID to submit payment proof",
+                                                negativeButtonText = "Cancel",
+                                                onSuccess = payAction,
+                                                onError = { msg -> formError = msg }
+                                            )
+                                        } else {
+                                            payAction()
+                                        }
                                     }
                                 }
                             },

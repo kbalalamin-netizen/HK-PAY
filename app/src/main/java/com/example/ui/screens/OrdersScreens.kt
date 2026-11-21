@@ -239,6 +239,12 @@ fun OrderDetailScreen(
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                             Spacer(Modifier.height(10.dp))
                             PriceLine("Total Amount", FormatUtils.formatMoney(order.totalPrice, order.currency))
+                            if (order.selectedDesign.isNotBlank()) {
+                                PriceLine("Card Design", order.selectedDesign)
+                            }
+                            if (order.referralDiscountApplied > 0.0) {
+                                PriceLine("Referral Credit Applied", "-${FormatUtils.formatMoney(order.referralDiscountApplied, order.currency)}")
+                            }
                             PriceLine("Payment Status", order.paymentStatus)
                             if (order.paymentMethod.isNotBlank()) {
                                 PriceLine("Payment Method", order.paymentMethod)
