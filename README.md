@@ -7,11 +7,11 @@ A native Android application built with **Kotlin** and **Jetpack Compose (Materi
 ## Project Identity
 
 - **App Name:** `HK PAY`
-- **Android Application ID (Package Name):** `com.hkpay.app`
-- **Firebase Project ID:** `money-6e7f2`
-- **Realtime Database URL:** `https://money-6e7f2-default-rtdb.firebaseio.com`
-- **Storage Bucket:** `money-6e7f2.firebasestorage.app`
-- **Android App ID:** `1:98055922055:android:265d59ed426b10f0e97322`
+- **Android Application ID (Package Name):** `[here]`
+- **Firebase Project ID:** `[here]`
+- **Realtime Database URL:** `[here]`
+- **Storage Bucket:** `[here]`
+- **Android App ID:** `[here]`
 
 ---
 
