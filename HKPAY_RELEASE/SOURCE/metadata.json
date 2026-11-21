@@ -1,0 +1,6 @@
+{
+  "name": "HK PAY",
+  "description": "Premium Physical Payment Card ordering and card management Android application powered by Firebase.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

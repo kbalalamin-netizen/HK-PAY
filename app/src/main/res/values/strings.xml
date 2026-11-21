@@ -1,0 +1,21 @@
+<resources>
+    <string name="app_name">HK PAY</string>
+    <string name="app_tagline">Global Physical Payment Cards</string>
+    <string name="fcm_channel_orders_id">hkpay_orders</string>
+    <string name="fcm_channel_orders_name">Orders &amp; Card Updates</string>
+    <string name="fcm_channel_security_id">hkpay_security</string>
+    <string name="fcm_channel_security_name">Security &amp; KYC Alerts</string>
+    <string name="fcm_channel_general_id">hkpay_general</string>
+    <string name="fcm_channel_general_name">System Notices &amp; Rates</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_cards">Cards</string>
+    <string name="nav_buy">Buy</string>
+    <string name="nav_orders">Orders</string>
+    <string name="nav_profile">Profile</string>
+    <string name="err_invalid_email">Please enter a valid email address.</string>
+    <string name="err_short_password">Password must be at least 6 characters.</string>
+    <string name="err_password_mismatch">Passwords do not match.</string>
+    <string name="err_empty_name">Full name is required.</string>
+    <string name="security_payment_notice">Payment confirmation is verified exclusively by our authorized backend webhook.</string>
+    <string name="security_card_notice">Sensitive card data is never stored in Firebase. Reveal requires a verified issuer endpoint.</string>
+</resources>
