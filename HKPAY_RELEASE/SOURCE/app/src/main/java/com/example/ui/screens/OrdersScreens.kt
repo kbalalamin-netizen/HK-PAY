@@ -20,9 +20,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.LocalShipping
-import androidx.compose.material.icons.rounded.Payment
-import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -46,12 +43,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.model.CardOrder
 import com.example.data.model.HKPayConstants
+import com.example.data.model.ThemeMode
 import com.example.ui.components.CopyableChip
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.GlassCard
 import com.example.ui.components.HKPayPrimaryButton
 import com.example.ui.components.HKPayTopBar
 import com.example.ui.components.StatusBadge
+import com.example.ui.components.ThemeCycleIconButton
+import com.example.ui.theme.HKPayIcons
 import com.example.ui.theme.LocalHKPayColors
 import com.example.ui.viewmodel.MainDashboardState
 import com.example.util.FormatUtils
@@ -59,6 +59,8 @@ import com.example.util.FormatUtils
 @Composable
 fun OrdersScreen(
     state: MainDashboardState,
+    themeMode: ThemeMode,
+    onToggleTheme: () -> Unit,
     onSelectOrder: (String) -> Unit,
     onNavigateStore: () -> Unit
 ) {
@@ -89,10 +91,24 @@ fun OrdersScreen(
         ) {
             item {
                 Column {
-                    Text(text = "My Orders & Tracking", style = MaterialTheme.typography.headlineMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "My Orders & Tracking",
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        ThemeCycleIconButton(
+                            themeMode = themeMode,
+                            onToggleTheme = onToggleTheme
+                        )
+                    }
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "Real-time order progress synced from Firebase.",
+                        text = "Real-time order progress & personalized status alerts from Firebase.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -112,7 +128,7 @@ fun OrdersScreen(
             if (filteredOrders.isEmpty()) {
                 item {
                     EmptyStateCard(
-                        icon = Icons.Rounded.LocalShipping,
+                        icon = HKPayIcons.LocalShipping,
                         title = "No Orders Found",
                         subtitle = "Orders you place in the Physical Card Store will track live here.",
                         actionLabel = "Browse Card Store",
@@ -134,6 +150,7 @@ fun OrdersScreen(
                                 Text(
                                     text = order.packageName.ifBlank { "Physical Card" },
                                     style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -146,7 +163,8 @@ fun OrdersScreen(
                             Text(
                                 text = FormatUtils.formatMoney(order.totalPrice, order.currency),
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                         Spacer(Modifier.height(10.dp))
@@ -174,6 +192,8 @@ fun OrdersScreen(
 @Composable
 fun OrderDetailScreen(
     order: CardOrder?,
+    themeMode: ThemeMode,
+    onToggleTheme: () -> Unit,
     onBack: () -> Unit,
     onPayNow: (String) -> Unit,
     onCopied: (String) -> Unit
@@ -183,7 +203,14 @@ fun OrderDetailScreen(
 
     Scaffold(
         containerColor = Color.Transparent,
-        topBar = { HKPayTopBar(title = "Order Tracking", onBack = onBack) }
+        topBar = {
+            HKPayTopBar(
+                title = "Order Tracking",
+                onBack = onBack,
+                themeMode = themeMode,
+                onToggleTheme = onToggleTheme
+            )
+        }
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -194,7 +221,7 @@ fun OrderDetailScreen(
             if (order == null) {
                 Box(Modifier.padding(16.dp)) {
                     EmptyStateCard(
-                        icon = Icons.Rounded.LocalShipping,
+                        icon = HKPayIcons.LocalShipping,
                         title = "Order Not Found",
                         subtitle = "This order may have been removed or is still syncing.",
                         actionLabel = "Back to Orders",
@@ -217,7 +244,11 @@ fun OrderDetailScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(order.packageName, style = MaterialTheme.typography.titleLarge)
+                                    Text(
+                                        order.packageName,
+                                        style = MaterialTheme.typography.titleLarge,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
                                     Text(
                                         text = "${order.cardType}${if (order.network.isNotBlank()) " • ${order.network}" else ""}",
                                         style = MaterialTheme.typography.bodySmall,
@@ -264,7 +295,7 @@ fun OrderDetailScreen(
                                 HKPayPrimaryButton(
                                     text = "Complete Payment Now",
                                     onClick = { onPayNow(order.orderId) },
-                                    icon = Icons.Rounded.Payment,
+                                    icon = HKPayIcons.Payment,
                                     testTag = "order_detail_pay_button"
                                 )
                             }
@@ -273,7 +304,11 @@ fun OrderDetailScreen(
 
                     item {
                         GlassCard {
-                            Text("Delivery & Courier Information", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "Delivery & Courier Information",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
                             Spacer(Modifier.height(10.dp))
                             PriceLine("Recipient", order.customerName)
                             PriceLine("Phone", order.phoneNumber)
@@ -300,7 +335,11 @@ fun OrderDetailScreen(
 
                     item {
                         GlassCard {
-                            Text("Order Status Timeline", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "Order Status Timeline",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
                             Spacer(Modifier.height(12.dp))
 
                             val isTerminalAlt = order.orderStatus in listOf("Cancelled", "Refunded")
@@ -320,7 +359,7 @@ fun OrderDetailScreen(
                                 ) {
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         Icon(
-                                            imageVector = if (reached) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+                                            imageVector = if (reached) Icons.Rounded.CheckCircle else HKPayIcons.RadioButtonUnchecked,
                                             contentDescription = null,
                                             tint = if (reached) extra.cyanGlow else MaterialTheme.colorScheme.outline,
                                             modifier = Modifier.size(20.dp)

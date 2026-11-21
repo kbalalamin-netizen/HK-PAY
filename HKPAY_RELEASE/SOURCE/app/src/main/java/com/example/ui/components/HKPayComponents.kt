@@ -23,9 +23,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Contactless
-import androidx.compose.material.icons.rounded.ContentCopy
-import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,6 +32,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -54,8 +52,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.data.model.ThemeMode
+import com.example.data.model.TransactionRecord
+import com.example.ui.theme.HKPayIcons
 import com.example.ui.theme.JetBrainsMonoFontFamily
 import com.example.ui.theme.LocalHKPayColors
+import com.example.util.FormatUtils
 
 @Composable
 fun HKPayBackdrop(
@@ -103,6 +105,19 @@ fun HKPayBackdrop(
                     center = Offset(size.width * 0.12f, size.height * 0.88f),
                     radius = size.width * 0.7f
                 )
+            } else {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            extra.electricBlue.copy(alpha = 0.08f),
+                            Color.Transparent
+                        ),
+                        center = Offset(size.width * 0.88f, size.height * 0.08f),
+                        radius = size.width * 0.75f
+                    ),
+                    center = Offset(size.width * 0.88f, size.height * 0.08f),
+                    radius = size.width * 0.75f
+                )
             }
         }
         content()
@@ -119,6 +134,7 @@ fun GlassCard(
     val extra = LocalHKPayColors.current
     val shape = RoundedCornerShape(20.dp)
     val border = BorderStroke(1.dp, extra.glassBorder)
+    val onSurface = MaterialTheme.colorScheme.onSurface
 
     if (onClick != null) {
         Surface(
@@ -126,6 +142,7 @@ fun GlassCard(
             modifier = modifier,
             shape = shape,
             color = extra.glassSurface,
+            contentColor = onSurface,
             border = border,
             tonalElevation = 2.dp
         ) {
@@ -136,10 +153,43 @@ fun GlassCard(
             modifier = modifier,
             shape = shape,
             color = extra.glassSurface,
+            contentColor = onSurface,
             border = border,
             tonalElevation = 2.dp
         ) {
             Column(modifier = Modifier.padding(contentPadding), content = content)
+        }
+    }
+}
+
+@Composable
+fun ThemeCycleIconButton(
+    themeMode: ThemeMode,
+    onToggleTheme: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val extra = LocalHKPayColors.current
+    val icon = when (themeMode) {
+        ThemeMode.DARK -> HKPayIcons.DarkMode
+        ThemeMode.LIGHT -> HKPayIcons.LightMode
+        ThemeMode.NAVY -> HKPayIcons.NavyTheme
+    }
+    Surface(
+        onClick = onToggleTheme,
+        modifier = modifier
+            .size(40.dp)
+            .testTag("header_theme_toggle_button"),
+        shape = CircleShape,
+        color = extra.electricBlue.copy(alpha = 0.14f),
+        border = BorderStroke(1.dp, extra.cyanGlow.copy(alpha = 0.45f))
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = icon,
+                contentDescription = "Theme: ${themeMode.label}. Tap to switch theme",
+                tint = extra.cyanGlow,
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }
@@ -200,8 +250,13 @@ fun StatusBadge(
     val extra = LocalHKPayColors.current
     val normalized = status.lowercase()
     val tint = when {
-        normalized in listOf("active", "approved", "paid", "payment confirmed", "delivered", "resolved", "available") -> extra.success
-        normalized in listOf("pending", "payment pending", "kyc pending", "card processing", "shipped", "in transit", "open", "in progress", "card activation pending", "card issued") -> extra.warning
+        normalized in listOf(
+            "active", "approved", "paid", "payment confirmed", "delivered", "resolved", "available", "completed", "credited"
+        ) -> extra.success
+        normalized in listOf(
+            "pending", "payment pending", "kyc pending", "card processing", "shipped",
+            "in transit", "open", "in progress", "card activation pending", "card issued"
+        ) -> extra.warning
         normalized in listOf("rejected", "cancelled", "failed", "unavailable", "suspended") -> extra.danger
         else -> extra.info
     }
@@ -242,7 +297,7 @@ fun HKPayPhysicalCardVisual(
     val shape = RoundedCornerShape(22.dp)
     val startCol = gradientStart ?: extra.cardGradientStart
     val endCol = gradientEnd ?: extra.cardGradientEnd
-    val accentCol = accentColor ?: extra.cyanGlow
+    val accentCol = accentColor ?: Color(0xFF00E5FF)
 
     Box(
         modifier = modifier
@@ -299,7 +354,7 @@ fun HKPayPhysicalCardVisual(
                         )
                         Text(
                             text = cardName,
-                            color = extra.cyanGlow,
+                            color = Color(0xFF5CEBFF),
                             style = MaterialTheme.typography.bodySmall,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -325,9 +380,9 @@ fun HKPayPhysicalCardVisual(
                         .border(1.dp, Color(0xFFFFEEAA), RoundedCornerShape(7.dp))
                 )
                 Icon(
-                    imageVector = Icons.Rounded.Contactless,
+                    imageVector = HKPayIcons.Contactless,
                     contentDescription = "Contactless NFC",
-                    tint = extra.cyanGlow,
+                    tint = Color(0xFF5CEBFF),
                     modifier = Modifier.size(26.dp)
                 )
                 Spacer(Modifier.weight(1f))
@@ -366,7 +421,7 @@ fun HKPayPhysicalCardVisual(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "CARDHOLDER",
-                        color = Color.White.copy(alpha = 0.6f),
+                        color = Color.White.copy(alpha = 0.65f),
                         style = MaterialTheme.typography.labelSmall
                     )
                     Text(
@@ -380,7 +435,7 @@ fun HKPayPhysicalCardVisual(
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
                         text = cardType.ifBlank { "PHYSICAL" }.uppercase(),
-                        color = extra.cyanGlow,
+                        color = Color(0xFF5CEBFF),
                         style = MaterialTheme.typography.labelSmall
                     )
                     if (expiryDate.isNotBlank()) {
@@ -402,6 +457,8 @@ fun HKPayPhysicalCardVisual(
 fun HKPayTopBar(
     title: String,
     onBack: (() -> Unit)? = null,
+    themeMode: ThemeMode? = null,
+    onToggleTheme: (() -> Unit)? = null,
     actions: @Composable () -> Unit = {}
 ) {
     TopAppBar(
@@ -409,6 +466,7 @@ fun HKPayTopBar(
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -421,12 +479,23 @@ fun HKPayTopBar(
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Navigate back"
+                        contentDescription = "Navigate back",
+                        tint = MaterialTheme.colorScheme.onBackground
                     )
                 }
             }
         },
-        actions = { actions() },
+        actions = {
+            actions()
+            if (themeMode != null && onToggleTheme != null) {
+                Spacer(Modifier.width(4.dp))
+                ThemeCycleIconButton(
+                    themeMode = themeMode,
+                    onToggleTheme = onToggleTheme,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+            }
+        },
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = Color.Transparent,
             titleContentColor = MaterialTheme.colorScheme.onBackground,
@@ -468,6 +537,7 @@ fun EmptyStateCard(
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(6.dp))
@@ -514,7 +584,7 @@ fun CopyableChip(
             )
             Spacer(Modifier.width(6.dp))
             Icon(
-                imageVector = Icons.Rounded.ContentCopy,
+                imageVector = HKPayIcons.ContentCopy,
                 contentDescription = "Copy $label",
                 tint = extra.cyanGlow,
                 modifier = Modifier.size(14.dp)
@@ -540,7 +610,7 @@ fun SecurityNoticeBanner(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = Icons.Rounded.Shield,
+                imageVector = HKPayIcons.Shield,
                 contentDescription = "Security notice",
                 tint = extra.cyanGlow,
                 modifier = Modifier.size(20.dp)
@@ -551,6 +621,154 @@ fun SecurityNoticeBanner(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface
             )
+        }
+    }
+}
+
+@Composable
+fun TransactionActivityCard(
+    tx: TransactionRecord,
+    onClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    val extra = LocalHKPayColors.current
+    val txIcon = when {
+        tx.txType.contains("Refund", ignoreCase = true) -> HKPayIcons.CurrencyExchange
+        tx.txType.contains("Payment", ignoreCase = true) -> HKPayIcons.AccountBalance
+        tx.txType.contains("Card", ignoreCase = true) -> HKPayIcons.CreditCard
+        else -> HKPayIcons.ReceiptLong
+    }
+
+    GlassCard(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(14.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(extra.electricBlue.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = txIcon,
+                    contentDescription = tx.txType,
+                    tint = extra.cyanGlow,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = tx.txType.ifBlank { "Card Activity" },
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (tx.description.isNotBlank()) {
+                    Text(
+                        text = tx.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Text(
+                    text = buildString {
+                        append(tx.txId)
+                        if (tx.orderId.isNotBlank()) append(" • ${tx.orderId}")
+                        if (tx.cardId.isNotBlank()) append(" • Card ${tx.cardId.takeLast(4)}")
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = extra.cyanGlow,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = FormatUtils.formatDateTime(tx.createdAt),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Column(horizontalAlignment = Alignment.End) {
+                val isCredit = tx.txType.contains("Refund", ignoreCase = true) ||
+                    tx.txType.contains("Funding", ignoreCase = true) ||
+                    tx.txType.contains("Bonus", ignoreCase = true)
+                Text(
+                    text = (if (isCredit) "+" else "") + FormatUtils.formatMoney(tx.amount, tx.currency),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isCredit) extra.success else MaterialTheme.colorScheme.onSurface
+                )
+                if (tx.fee > 0.0) {
+                    Text(
+                        text = "Fee: ${FormatUtils.formatMoney(tx.fee, tx.currency)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                StatusBadge(status = tx.status)
+            }
+        }
+    }
+}
+
+@Composable
+fun RecentCardActivitySection(
+    transactions: List<TransactionRecord>,
+    onSeeAll: () -> Unit,
+    onSelectOrder: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    title: String = "Recent Card Activity",
+    maxItems: Int = 4
+) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            if (transactions.isNotEmpty()) {
+                TextButton(
+                    onClick = onSeeAll,
+                    modifier = Modifier.testTag("recent_activity_see_all_button")
+                ) {
+                    Text("See All")
+                }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        if (transactions.isEmpty()) {
+            EmptyStateCard(
+                icon = HKPayIcons.ReceiptLong,
+                title = "No Recent Card Activity",
+                subtitle = "Card purchases, issuing fees, loads, and settlements from Firebase appear here in real time."
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                transactions.take(maxItems).forEach { tx ->
+                    TransactionActivityCard(
+                        tx = tx,
+                        onClick = if (tx.orderId.isNotBlank()) {
+                            { onSelectOrder(tx.orderId) }
+                        } else null
+                    )
+                }
+            }
         }
     }
 }

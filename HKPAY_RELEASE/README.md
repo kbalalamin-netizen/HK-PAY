@@ -11,12 +11,14 @@ This directory packages the **HK PAY** Physical Payment Card Android User Applic
 
 ## Included Capabilities
 
-- Firebase Authentication (Email/Password, Verification, Reset, Biometric Unlock)
-- Biometric Fingerprint / Face Unlock gating for app lock & sensitive actions
-- 4-Step In-App Tutorials (`HorizontalPager`) for Registration, Packages, Orders, and KYC
-- Referral Program (`HKR...` user codes, `$5.00` dual-sided credits, Firebase RTDB tracking)
-- Swipeable Card Selection (`HorizontalPager` card finish selector + live card packages)
-- Full Physical Card Ordering, Receipt Upload, 14-Step Tracking, KYC & Support
+- Fast Splash, Sign In, Email Verification (link + Open Inbox), Forgot Password & Biometric Unlock
+- 2-Step Account Creation with Phone (no SMS OTP), NID Front/Back upload & Live Camera Liveness Check
+- 3-Theme System (`Dark`, `Light`, `Navy`) with instant Header Theme Icon switcher & matched contrast
+- Dashboard Card-Linked Balance Hero with Show/Hide toggle & embedded Recent Card Activity
+- 13-Field Premium Profile Editor with Completion Percentage, Avatar Upload & Pre-filled Shipping Checkout
+- Personalized FCM Order Status Notifications (`orderId`, `orderStatus`, `customerName`, `trackingNumber`) & Deep Linking
+- Full Firebase Admin Control (`/app_settings` maintenance shield, registration/ordering switches, referral bonus, support contact)
+- Swipeable Card Selection (`HorizontalPager`), Card Store, 14-Step Order Tracking, Referral Program & Support Ticketing
 
 ## Firebase Configuration (`money-6e7f2`)
 

@@ -1,7 +1,9 @@
 package com.example.ui.viewmodel
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.model.AppSettings
 import com.example.data.repository.AuthRepository
 import com.example.data.repository.HKPayRepository
 import com.example.util.FormatUtils
@@ -10,6 +12,7 @@ import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthInvalidUserException
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.FirebaseUser
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -42,9 +45,11 @@ class AuthViewModel(
     private val _uiState = MutableStateFlow(AuthUiState())
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
 
+    private val _publicConfig = MutableStateFlow(AppSettings())
+    val publicConfig: StateFlow<AppSettings> = _publicConfig.asStateFlow()
+
     init {
         viewModelScope.launch {
-            delay(1300)
             authRepository.observeAuthState().collect { user ->
                 when {
                     user == null -> _sessionState.value = AuthSessionState.Unauthenticated
@@ -55,14 +60,22 @@ class AuthViewModel(
                         )
                     }
                     else -> {
-                        hkPayRepository.ensureUserProfileExists(
-                            uid = user.uid,
-                            email = user.email.orEmpty(),
-                            fullName = user.displayName.orEmpty()
-                        )
                         _sessionState.value = AuthSessionState.Authenticated(user)
+                        // Ensure RTDB profile exists asynchronously without blocking transition speed
+                        launch(Dispatchers.IO) {
+                            hkPayRepository.ensureUserProfileExists(
+                                uid = user.uid,
+                                email = user.email.orEmpty(),
+                                fullName = user.displayName.orEmpty()
+                            )
+                        }
                     }
                 }
+            }
+        }
+        viewModelScope.launch {
+            hkPayRepository.observePublicAppConfig().collect { config ->
+                _publicConfig.value = config
             }
         }
     }
@@ -91,11 +104,6 @@ class AuthViewModel(
                             uid = user.uid
                         )
                     } else {
-                        hkPayRepository.ensureUserProfileExists(
-                            uid = user.uid,
-                            email = user.email.orEmpty(),
-                            fullName = user.displayName.orEmpty()
-                        )
                         _sessionState.value = AuthSessionState.Authenticated(user)
                     }
                     _uiState.update { it.copy(isLoading = false) }
@@ -109,16 +117,32 @@ class AuthViewModel(
     fun signUp(
         fullName: String,
         email: String,
+        phone: String,
         password: String,
         confirmPassword: String,
+        nidNumber: String,
+        nidFrontUri: Uri?,
+        nidBackUri: Uri?,
+        livenessUri: Uri?,
+        livenessChallenge: String,
         referralCode: String = ""
     ) {
+        val config = _publicConfig.value
+        if (!config.registrationEnabled) {
+            _uiState.update { it.copy(errorMessage = "New registrations are temporarily paused by administrator.") }
+            return
+        }
         if (fullName.trim().length < 2) {
             _uiState.update { it.copy(errorMessage = "Please enter your full legal name.") }
             return
         }
         if (!FormatUtils.isValidEmail(email)) {
             _uiState.update { it.copy(errorMessage = "Please enter a valid email address.") }
+            return
+        }
+        val digits = phone.filter { it.isDigit() }
+        if (digits.length < 8) {
+            _uiState.update { it.copy(errorMessage = "Please enter a valid phone number.") }
             return
         }
         if (password.length < 6) {
@@ -129,15 +153,39 @@ class AuthViewModel(
             _uiState.update { it.copy(errorMessage = "Passwords do not match.") }
             return
         }
+        if (nidNumber.trim().length < 6) {
+            _uiState.update { it.copy(errorMessage = "Please enter a valid NID number.") }
+            return
+        }
+        if (nidFrontUri == null || nidBackUri == null) {
+            _uiState.update { it.copy(errorMessage = "Please select both NID Front and NID Back photos.") }
+            return
+        }
+        if (livenessUri == null) {
+            _uiState.update { it.copy(errorMessage = "Please complete the live selfie liveness check.") }
+            return
+        }
 
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null, infoMessage = null) }
-            authRepository.signUp(fullName, email, password, referralCode)
+            authRepository.signUp(
+                fullName = fullName,
+                email = email,
+                phone = phone,
+                password = password,
+                nidNumber = nidNumber,
+                nidFrontUri = nidFrontUri,
+                nidBackUri = nidBackUri,
+                livenessUri = livenessUri,
+                livenessChallenge = livenessChallenge,
+                referralCodeInput = referralCode,
+                referralBonusUsd = config.referralBonusAmount
+            )
                 .onSuccess { user ->
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            infoMessage = "Verification email sent to ${user.email}. Please verify to continue."
+                            infoMessage = "Verification link sent to ${user.email}. Verify your email to continue."
                         )
                     }
                     _sessionState.value = AuthSessionState.NeedsVerification(
@@ -183,7 +231,7 @@ class AuthViewModel(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            infoMessage = "Verification email resent. Please check your inbox and spam folder."
+                            infoMessage = "Verification link resent. Please check your inbox and spam folder."
                         )
                     }
                     startResendCooldown()
@@ -200,13 +248,15 @@ class AuthViewModel(
             authRepository.reloadCurrentUser()
                 .onSuccess { user ->
                     if (user.isEmailVerified) {
-                        hkPayRepository.ensureUserProfileExists(
-                            uid = user.uid,
-                            email = user.email.orEmpty(),
-                            fullName = user.displayName.orEmpty()
-                        )
                         _sessionState.value = AuthSessionState.Authenticated(user)
                         _uiState.update { it.copy(isLoading = false) }
+                        launch(Dispatchers.IO) {
+                            hkPayRepository.ensureUserProfileExists(
+                                uid = user.uid,
+                                email = user.email.orEmpty(),
+                                fullName = user.displayName.orEmpty()
+                            )
+                        }
                     } else {
                         _uiState.update {
                             it.copy(

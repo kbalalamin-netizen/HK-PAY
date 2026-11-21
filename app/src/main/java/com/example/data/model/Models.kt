@@ -1,9 +1,15 @@
 package com.example.data.model
 
 enum class ThemeMode(val label: String) {
-    DARK("Dark Navy"),
-    LIGHT("Light Ice"),
-    SYSTEM("System Default")
+    DARK("Dark"),
+    LIGHT("Light"),
+    NAVY("Navy");
+
+    fun next(): ThemeMode = when (this) {
+        DARK -> NAVY
+        NAVY -> LIGHT
+        LIGHT -> DARK
+    }
 }
 
 object HKPayConstants {
@@ -32,12 +38,14 @@ object HKPayConstants {
 
     val NOTIFICATION_TYPES = listOf(
         "Order Created",
+        "Order Status",
         "Payment Confirmed",
         "KYC Update",
         "Card Processing",
         "Card Shipped",
         "Card Delivered",
         "Card Activated",
+        "Referral Bonus",
         "Refund",
         "Security Alert",
         "System Notice"
@@ -58,6 +66,19 @@ data class UserProfile(
     val email: String = "",
     val phone: String = "",
     val country: String = "Bangladesh",
+    val dateOfBirth: String = "",
+    val gender: String = "",
+    val nidNumber: String = "",
+    val occupation: String = "",
+    val monthlyIncomeRange: String = "",
+    val preferredCurrency: String = "USD",
+    val streetAddress: String = "",
+    val cityUpazila: String = "",
+    val district: String = "",
+    val postalCode: String = "",
+    val livenessVerified: Boolean = false,
+    val livenessChallenge: String = "",
+    val livenessTimestamp: Long = 0L,
     val photoUrl: String = "",
     val joinDate: Long = 0L,
     val kycStatus: String = "Not Submitted",
@@ -69,7 +90,25 @@ data class UserProfile(
     val referredByCode: String = "",
     val rewardCredits: Double = 0.0,
     val notificationPrefs: NotificationPreferences = NotificationPreferences()
-)
+) {
+    val completionPercent: Int
+        get() {
+            val fields = listOf(
+                fullName,
+                phone,
+                dateOfBirth,
+                gender,
+                nidNumber,
+                occupation,
+                streetAddress,
+                cityUpazila,
+                district,
+                country
+            )
+            val filled = fields.count { it.isNotBlank() } + (if (photoUrl.isNotBlank()) 1 else 0) + (if (livenessVerified) 1 else 0)
+            return ((filled * 100) / 12).coerceIn(0, 100)
+        }
+}
 
 data class CardPackage(
     val id: String = "",
@@ -171,6 +210,9 @@ data class KycSubmission(
     val frontDocumentUrl: String = "",
     val backDocumentUrl: String = "",
     val selfieUrl: String = "",
+    val livenessChallenge: String = "",
+    val livenessTimestamp: Long = 0L,
+    val livenessVerified: Boolean = false,
     val status: String = "Not Submitted",
     val rejectionReason: String = "",
     val submittedAt: Long = 0L,
@@ -202,10 +244,22 @@ data class PaymentMethodConfig(
 
 data class AppSettings(
     val paymentMethods: List<PaymentMethodConfig> = emptyList(),
-    val kycSelfieEnabled: Boolean = false,
+    val maintenanceMode: Boolean = false,
+    val maintenanceMessage: String = "",
+    val registrationEnabled: Boolean = true,
+    val cardOrderingEnabled: Boolean = true,
+    val referralProgramEnabled: Boolean = true,
+    val referralBonusAmount: Double = 5.0,
+    val kycRequiredForOrder: Boolean = true,
+    val kycSelfieEnabled: Boolean = true,
+    val livenessCheckRequired: Boolean = true,
     val supportEmail: String = "",
+    val supportPhone: String = "",
+    val supportWhatsApp: String = "",
     val supportHours: String = "",
-    val systemNotice: String = ""
+    val bannerTitle: String = "",
+    val systemNotice: String = "",
+    val minSupportedVersionCode: Int = 1
 )
 
 data class TransactionRecord(
@@ -280,4 +334,3 @@ data class CardDesignOption(
     val gradientEndHex: Long,
     val accentHex: Long
 )
-

@@ -2,29 +2,34 @@ package com.example.ui.navigation
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AddCard
-import androidx.compose.material.icons.outlined.CreditCard
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.LocalShipping
 import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.rounded.AddCard
-import androidx.compose.material.icons.rounded.CreditCard
 import androidx.compose.material.icons.rounded.Home
-import androidx.compose.material.icons.rounded.LocalShipping
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -34,6 +39,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationRailItemDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -45,11 +51,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
@@ -61,8 +70,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import com.example.data.model.AppSettings
 import com.example.data.model.ThemeMode
+import com.example.ui.components.GlassCard
 import com.example.ui.components.HKPayBackdrop
+import com.example.ui.components.ThemeCycleIconButton
 import com.example.ui.screens.BiometricLockScreen
 import com.example.ui.screens.BuyCardScreen
 import com.example.ui.screens.CardSelectionScreen
@@ -89,6 +101,7 @@ import com.example.ui.screens.SupportScreen
 import com.example.ui.screens.TransactionHistoryScreen
 import com.example.ui.screens.TutorialsScreen
 import com.example.ui.screens.WelcomeScreen
+import com.example.ui.theme.HKPayIcons
 import com.example.ui.theme.LocalHKPayColors
 import com.example.ui.viewmodel.AuthSessionState
 import com.example.ui.viewmodel.AuthViewModel
@@ -137,9 +150,9 @@ private data class TopLevelDestination(
 
 private val TopLevelDestinations = listOf(
     TopLevelDestination(HomeRoute, "Home", Icons.Rounded.Home, Icons.Outlined.Home, "nav_home"),
-    TopLevelDestination(CardsRoute, "Cards", Icons.Rounded.CreditCard, Icons.Outlined.CreditCard, "nav_cards"),
-    TopLevelDestination(BuyStoreRoute, "Buy", Icons.Rounded.AddCard, Icons.Outlined.AddCard, "nav_buy"),
-    TopLevelDestination(OrdersRoute, "Orders", Icons.Rounded.LocalShipping, Icons.Outlined.LocalShipping, "nav_orders"),
+    TopLevelDestination(CardsRoute, "Cards", HKPayIcons.CreditCard, HKPayIcons.CreditCard, "nav_cards"),
+    TopLevelDestination(BuyStoreRoute, "Buy", HKPayIcons.AddCard, HKPayIcons.AddCard, "nav_buy"),
+    TopLevelDestination(OrdersRoute, "Orders", HKPayIcons.LocalShipping, HKPayIcons.LocalShipping, "nav_orders"),
     TopLevelDestination(ProfileRoute, "Profile", Icons.Rounded.Person, Icons.Outlined.Person, "nav_profile")
 )
 
@@ -147,10 +160,13 @@ private val TopLevelDestinations = listOf(
 fun HKPayAppRoot(
     authViewModel: AuthViewModel,
     mainViewModel: MainViewModel,
-    themeMode: ThemeMode
+    themeMode: ThemeMode,
+    pendingOrderId: String? = null,
+    onConsumePendingOrderId: () -> Unit = {}
 ) {
     val sessionState by authViewModel.sessionState.collectAsStateWithLifecycle()
     val authUiState by authViewModel.uiState.collectAsStateWithLifecycle()
+    val publicConfig by authViewModel.publicConfig.collectAsStateWithLifecycle()
     val biometricEnabled by mainViewModel.biometricEnabled.collectAsStateWithLifecycle()
     val isBiometricUnlocked by mainViewModel.isBiometricUnlockedThisSession.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -163,19 +179,33 @@ fun HKPayAppRoot(
 
         is AuthSessionState.Unauthenticated -> {
             LaunchedEffect(Unit) { mainViewModel.clearSession() }
-            AuthFlowHost(
-                authUiState = authUiState,
-                onSignIn = authViewModel::signIn,
-                onSignUp = authViewModel::signUp,
-                onForgotPassword = authViewModel::sendPasswordReset,
-                onClearMessages = authViewModel::clearMessages
-            )
+            if (publicConfig.maintenanceMode) {
+                MaintenanceShieldScreen(
+                    settings = publicConfig,
+                    themeMode = themeMode,
+                    onToggleTheme = mainViewModel::cycleThemeMode,
+                    onSignOut = null
+                )
+            } else {
+                AuthFlowHost(
+                    authUiState = authUiState,
+                    publicConfig = publicConfig,
+                    themeMode = themeMode,
+                    onToggleTheme = mainViewModel::cycleThemeMode,
+                    onSignIn = authViewModel::signIn,
+                    onSignUp = authViewModel::signUp,
+                    onForgotPassword = authViewModel::sendPasswordReset,
+                    onClearMessages = authViewModel::clearMessages
+                )
+            }
         }
 
         is AuthSessionState.NeedsVerification -> {
             EmailVerificationScreen(
                 email = session.email,
                 uiState = authUiState,
+                themeMode = themeMode,
+                onToggleTheme = mainViewModel::cycleThemeMode,
                 onResend = authViewModel::resendVerificationEmail,
                 onCheckVerified = authViewModel::checkEmailVerification,
                 onSignOut = authViewModel::signOut
@@ -221,6 +251,8 @@ fun HKPayAppRoot(
                     mainViewModel = mainViewModel,
                     themeMode = themeMode,
                     biometricEnabled = biometricEnabled,
+                    pendingOrderId = pendingOrderId,
+                    onConsumePendingOrderId = onConsumePendingOrderId,
                     onLogout = {
                         mainViewModel.clearSession()
                         authViewModel.signOut()
@@ -232,10 +264,113 @@ fun HKPayAppRoot(
 }
 
 @Composable
+private fun MaintenanceShieldScreen(
+    settings: AppSettings,
+    themeMode: ThemeMode,
+    onToggleTheme: () -> Unit,
+    onSignOut: (() -> Unit)?
+) {
+    val extra = LocalHKPayColors.current
+    HKPayBackdrop {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .safeDrawingPadding()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Row(
+                modifier = Modifier
+                    .widthIn(max = 520.dp)
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                ThemeCycleIconButton(themeMode = themeMode, onToggleTheme = onToggleTheme)
+            }
+            Spacer(Modifier.weight(1f))
+            Column(
+                modifier = Modifier.widthIn(max = 520.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(76.dp)
+                        .clip(CircleShape)
+                        .background(extra.warning.copy(alpha = 0.16f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = HKPayIcons.Shield,
+                        contentDescription = "Maintenance mode",
+                        tint = extra.warning,
+                        modifier = Modifier.size(38.dp)
+                    )
+                }
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    text = "Scheduled Maintenance",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(8.dp))
+                GlassCard {
+                    Text(
+                        text = settings.maintenanceMessage.ifBlank {
+                            "HK PAY is currently undergoing scheduled administrator maintenance. Your cards and funds remain safe. Please check back shortly."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center
+                    )
+                    if (settings.supportEmail.isNotBlank() || settings.supportPhone.isNotBlank()) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            text = listOf(settings.supportEmail, settings.supportPhone)
+                                .filter { it.isNotBlank() }
+                                .joinToString(" • "),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = extra.cyanGlow,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    if (onSignOut != null) {
+                        Spacer(Modifier.height(14.dp))
+                        OutlinedButton(
+                            onClick = onSignOut,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Sign Out")
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
 private fun AuthFlowHost(
     authUiState: com.example.ui.viewmodel.AuthUiState,
+    publicConfig: AppSettings,
+    themeMode: ThemeMode,
+    onToggleTheme: () -> Unit,
     onSignIn: (String, String) -> Unit,
-    onSignUp: (String, String, String, String, String) -> Unit,
+    onSignUp: (
+        fullName: String,
+        email: String,
+        phone: String,
+        password: String,
+        confirmPassword: String,
+        nidNumber: String,
+        nidFrontUri: Uri?,
+        nidBackUri: Uri?,
+        livenessUri: Uri?,
+        livenessChallenge: String,
+        referralCode: String
+    ) -> Unit,
     onForgotPassword: (String) -> Unit,
     onClearMessages: () -> Unit
 ) {
@@ -247,6 +382,8 @@ private fun AuthFlowHost(
     ) {
         composable<WelcomeRoute> {
             WelcomeScreen(
+                themeMode = themeMode,
+                onToggleTheme = onToggleTheme,
                 onSignInClick = {
                     onClearMessages()
                     navController.navigate(SignInRoute)
@@ -260,6 +397,8 @@ private fun AuthFlowHost(
         composable<SignInRoute> {
             SignInScreen(
                 uiState = authUiState,
+                themeMode = themeMode,
+                onToggleTheme = onToggleTheme,
                 onSignIn = onSignIn,
                 onForgotPassword = {
                     onClearMessages()
@@ -275,6 +414,9 @@ private fun AuthFlowHost(
         composable<SignUpRoute> {
             SignUpScreen(
                 uiState = authUiState,
+                publicConfig = publicConfig,
+                themeMode = themeMode,
+                onToggleTheme = onToggleTheme,
                 onSignUp = onSignUp,
                 onNavigateSignIn = {
                     onClearMessages()
@@ -286,6 +428,8 @@ private fun AuthFlowHost(
         composable<ForgotPasswordRoute> {
             ForgotPasswordScreen(
                 uiState = authUiState,
+                themeMode = themeMode,
+                onToggleTheme = onToggleTheme,
                 onSendReset = onForgotPassword,
                 onBack = { navController.popBackStack() }
             )
@@ -298,9 +442,12 @@ private fun MainAuthenticatedHost(
     mainViewModel: MainViewModel,
     themeMode: ThemeMode,
     biometricEnabled: Boolean,
+    pendingOrderId: String?,
+    onConsumePendingOrderId: () -> Unit,
     onLogout: () -> Unit
 ) {
     val state by mainViewModel.state.collectAsStateWithLifecycle()
+    val balanceVisible by mainViewModel.balanceVisible.collectAsStateWithLifecycle()
     val tutorialCompleted by mainViewModel.tutorialCompleted.collectAsStateWithLifecycle()
     val navController = rememberNavController()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -325,6 +472,15 @@ private fun MainAuthenticatedHost(
         }
     }
 
+    LaunchedEffect(pendingOrderId) {
+        if (!pendingOrderId.isNullOrBlank()) {
+            navController.navigate(OrderDetailRoute(pendingOrderId)) {
+                launchSingleTop = true
+            }
+            onConsumePendingOrderId()
+        }
+    }
+
     LaunchedEffect(mainViewModel) {
         mainViewModel.events.collect { event ->
             when (event) {
@@ -342,7 +498,7 @@ private fun MainAuthenticatedHost(
                     }
                 }
                 is UiEvent.KycSubmitted -> {
-                    snackbarHostState.showSnackbar("KYC documents submitted for review")
+                    snackbarHostState.showSnackbar("KYC & Liveness verification submitted")
                     navController.popBackStack()
                 }
                 is UiEvent.TicketCreated -> {
@@ -355,6 +511,16 @@ private fun MainAuthenticatedHost(
                 }
             }
         }
+    }
+
+    if (state.appSettings.maintenanceMode) {
+        MaintenanceShieldScreen(
+            settings = state.appSettings,
+            themeMode = themeMode,
+            onToggleTheme = mainViewModel::cycleThemeMode,
+            onSignOut = onLogout
+        )
+        return
     }
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -407,6 +573,8 @@ private fun MainAuthenticatedHost(
                                     colors = NavigationBarItemDefaults.colors(
                                         selectedIconColor = extra.cyanGlow,
                                         selectedTextColor = extra.cyanGlow,
+                                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                         indicatorColor = extra.electricBlue.copy(alpha = 0.22f)
                                     ),
                                     modifier = Modifier.testTag(dest.testTag)
@@ -441,6 +609,8 @@ private fun MainAuthenticatedHost(
                                     colors = NavigationRailItemDefaults.colors(
                                         selectedIconColor = extra.cyanGlow,
                                         selectedTextColor = extra.cyanGlow,
+                                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                         indicatorColor = extra.electricBlue.copy(alpha = 0.22f)
                                     ),
                                     modifier = Modifier.testTag(dest.testTag)
@@ -457,7 +627,11 @@ private fun MainAuthenticatedHost(
                             composable<HomeRoute> {
                                 DashboardScreen(
                                     state = state,
+                                    themeMode = themeMode,
+                                    balanceVisible = balanceVisible,
                                     tutorialCompleted = tutorialCompleted,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
+                                    onToggleBalanceVisible = mainViewModel::toggleBalanceVisibility,
                                     onNavigateBuyCard = { navigateTopLevel(BuyStoreRoute) },
                                     onNavigateCardSelection = { navController.navigate(CardSelectionRoute()) },
                                     onNavigateMyCards = { navigateTopLevel(CardsRoute) },
@@ -478,7 +652,10 @@ private fun MainAuthenticatedHost(
                             composable<CardsRoute> {
                                 MyCardsScreen(
                                     state = state,
+                                    themeMode = themeMode,
+                                    balanceVisible = balanceVisible,
                                     biometricEnabled = biometricEnabled,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
                                     onRevealToggle = mainViewModel::toggleCardSensitiveData,
                                     onNavigateStore = { navigateTopLevel(BuyStoreRoute) },
                                     onCopied = ::showMessage
@@ -488,6 +665,8 @@ private fun MainAuthenticatedHost(
                             composable<BuyStoreRoute> {
                                 CardStoreScreen(
                                     state = state,
+                                    themeMode = themeMode,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
                                     onSelectPackage = { pkg ->
                                         navController.navigate(CardSelectionRoute(pkg.id))
                                     },
@@ -501,7 +680,9 @@ private fun MainAuthenticatedHost(
                                 val args = backStackEntry.toRoute<CardSelectionRoute>()
                                 CardSelectionScreen(
                                     state = state,
+                                    themeMode = themeMode,
                                     initialPackageId = args.initialPackageId,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
                                     onBack = { navController.popBackStack() },
                                     onProceedToBuy = { packageId, designName ->
                                         navController.navigate(BuyCardRoute(packageId, designName))
@@ -512,6 +693,8 @@ private fun MainAuthenticatedHost(
                             composable<OrdersRoute> {
                                 OrdersScreen(
                                     state = state,
+                                    themeMode = themeMode,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
                                     onSelectOrder = { orderId -> navController.navigate(OrderDetailRoute(orderId)) },
                                     onNavigateStore = { navigateTopLevel(BuyStoreRoute) }
                                 )
@@ -523,6 +706,7 @@ private fun MainAuthenticatedHost(
                                     themeMode = themeMode,
                                     biometricEnabled = biometricEnabled,
                                     onChangeTheme = mainViewModel::setThemeMode,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
                                     onToggleBiometric = mainViewModel::setBiometricEnabled,
                                     onUploadPhoto = mainViewModel::uploadProfilePhoto,
                                     onEditProfile = { navController.navigate(EditProfileRoute) },
@@ -546,7 +730,9 @@ private fun MainAuthenticatedHost(
                                     cardPackage = pkg,
                                     selectedDesign = args.selectedDesign,
                                     state = state,
+                                    themeMode = themeMode,
                                     biometricEnabled = biometricEnabled,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
                                     onBack = { navController.popBackStack() },
                                     onConfirmOrder = mainViewModel::createOrder
                                 )
@@ -558,7 +744,9 @@ private fun MainAuthenticatedHost(
                                 PaymentScreen(
                                     order = order,
                                     state = state,
+                                    themeMode = themeMode,
                                     biometricEnabled = biometricEnabled,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
                                     onBack = { navController.popBackStack() },
                                     onSubmitPayment = mainViewModel::submitPayment,
                                     onCopied = ::showMessage
@@ -570,6 +758,8 @@ private fun MainAuthenticatedHost(
                                 val order = state.orders.find { it.orderId == args.orderId }
                                 OrderDetailScreen(
                                     order = order,
+                                    themeMode = themeMode,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
                                     onBack = { navController.popBackStack() },
                                     onPayNow = { orderId -> navController.navigate(PaymentRoute(orderId)) },
                                     onCopied = ::showMessage
@@ -579,6 +769,8 @@ private fun MainAuthenticatedHost(
                             composable<KycRoute> {
                                 KycScreen(
                                     state = state,
+                                    themeMode = themeMode,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
                                     onBack = { navController.popBackStack() },
                                     onSubmitKyc = mainViewModel::submitKyc
                                 )
@@ -587,6 +779,8 @@ private fun MainAuthenticatedHost(
                             composable<CurrencyRatesRoute> {
                                 CurrencyRatesScreen(
                                     state = state,
+                                    themeMode = themeMode,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
                                     onBack = { navController.popBackStack() }
                                 )
                             }
@@ -594,13 +788,18 @@ private fun MainAuthenticatedHost(
                             composable<TransactionsRoute> {
                                 TransactionHistoryScreen(
                                     state = state,
-                                    onBack = { navController.popBackStack() }
+                                    themeMode = themeMode,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
+                                    onBack = { navController.popBackStack() },
+                                    onOpenOrder = { orderId -> navController.navigate(OrderDetailRoute(orderId)) }
                                 )
                             }
 
                             composable<NotificationsRoute> {
                                 NotificationsScreen(
                                     state = state,
+                                    themeMode = themeMode,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
                                     onBack = { navController.popBackStack() },
                                     onMarkRead = mainViewModel::markNotificationRead,
                                     onOpenOrder = { orderId -> navController.navigate(OrderDetailRoute(orderId)) }
@@ -610,6 +809,8 @@ private fun MainAuthenticatedHost(
                             composable<SupportRoute> {
                                 SupportScreen(
                                     state = state,
+                                    themeMode = themeMode,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
                                     onBack = { navController.popBackStack() },
                                     onCreateTicket = mainViewModel::createSupportTicket,
                                     onSelectTicket = { ticketId -> navController.navigate(SupportDetailRoute(ticketId)) }
@@ -622,6 +823,8 @@ private fun MainAuthenticatedHost(
                                 SupportDetailScreen(
                                     ticket = ticket,
                                     isSubmitting = state.isSubmitting,
+                                    themeMode = themeMode,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
                                     onBack = { navController.popBackStack() },
                                     onSendReply = mainViewModel::replyToTicket
                                 )
@@ -630,6 +833,9 @@ private fun MainAuthenticatedHost(
                             composable<EditProfileRoute> {
                                 EditProfileScreen(
                                     state = state,
+                                    themeMode = themeMode,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
+                                    onUploadPhoto = mainViewModel::uploadProfilePhoto,
                                     onBack = { navController.popBackStack() },
                                     onSave = mainViewModel::updateProfile
                                 )
@@ -638,6 +844,8 @@ private fun MainAuthenticatedHost(
                             composable<NotificationSettingsRoute> {
                                 NotificationSettingsScreen(
                                     prefs = state.userProfile.notificationPrefs,
+                                    themeMode = themeMode,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
                                     onBack = { navController.popBackStack() },
                                     onSave = { prefs ->
                                         mainViewModel.updateNotificationPrefs(prefs)
@@ -648,6 +856,8 @@ private fun MainAuthenticatedHost(
 
                             composable<TutorialsRoute> {
                                 TutorialsScreen(
+                                    themeMode = themeMode,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
                                     onComplete = {
                                         mainViewModel.setTutorialCompleted(true)
                                         showMessage("Tutorials completed!")
@@ -664,6 +874,8 @@ private fun MainAuthenticatedHost(
                             composable<ReferralRoute> {
                                 ReferralScreen(
                                     state = state,
+                                    themeMode = themeMode,
+                                    onToggleTheme = mainViewModel::cycleThemeMode,
                                     onBack = { navController.popBackStack() },
                                     onClaimCode = mainViewModel::claimReferralCode,
                                     onCopied = ::showMessage

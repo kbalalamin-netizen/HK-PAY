@@ -1,7 +1,6 @@
 package com.example.ui.theme
 
 import android.app.Activity
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -17,6 +16,7 @@ import com.example.data.model.ThemeMode
 
 @Immutable
 data class HKPayExtraColors(
+    val themeMode: ThemeMode,
     val isDark: Boolean,
     val glassSurface: Color,
     val glassSurfaceElevated: Color,
@@ -33,32 +33,51 @@ data class HKPayExtraColors(
 )
 
 val DarkExtraColors = HKPayExtraColors(
+    themeMode = ThemeMode.DARK,
     isDark = true,
-    glassSurface = Color(0xCC0C1838),
-    glassSurfaceElevated = Color(0xE6132450),
-    glassBorder = Color(0x3D00E5FF),
+    glassSurface = Color(0xD90E1629),
+    glassSurfaceElevated = Color(0xF015203B),
+    glassBorder = Color(0x3D4C8DFF),
     cyanGlow = CyanGlow,
     electricBlue = ElectricBlue,
     success = EmeraldSuccess,
     warning = AmberWarning,
     danger = CrimsonError,
     info = IndigoInfo,
-    cardGradientStart = Color(0xFF0A1B47),
-    cardGradientEnd = Color(0xFF030A1E),
+    cardGradientStart = Color(0xFF0E1B3A),
+    cardGradientEnd = Color(0xFF040814),
+    subtleText = DarkSecondaryText
+)
+
+val NavyExtraColors = HKPayExtraColors(
+    themeMode = ThemeMode.NAVY,
+    isDark = true,
+    glassSurface = Color(0xCC0C2058),
+    glassSurfaceElevated = Color(0xEB132D75),
+    glassBorder = Color(0x4700E5FF),
+    cyanGlow = CyanGlow,
+    electricBlue = ElectricBlueBright,
+    success = EmeraldSuccess,
+    warning = AmberWarning,
+    danger = CrimsonError,
+    info = IndigoInfo,
+    cardGradientStart = Color(0xFF0D286B),
+    cardGradientEnd = Color(0xFF030B29),
     subtleText = SteelText
 )
 
 val LightExtraColors = HKPayExtraColors(
+    themeMode = ThemeMode.LIGHT,
     isDark = false,
-    glassSurface = Color(0xF2FFFFFF),
+    glassSurface = Color(0xF8FFFFFF),
     glassSurfaceElevated = Color(0xFFFFFFFF),
     glassBorder = LightBorder,
     cyanGlow = LightCyanAccent,
     electricBlue = LightElectricBlue,
-    success = Color(0xFF00A870),
-    warning = Color(0xFFD98800),
-    danger = Color(0xFFD92D4A),
-    info = Color(0xFF2E5BFF),
+    success = Color(0xFF008A5B),
+    warning = Color(0xFFB86E00),
+    danger = Color(0xFFC9203D),
+    info = Color(0xFF1D4ED8),
     cardGradientStart = Color(0xFF0A1D4D),
     cardGradientEnd = Color(0xFF03081C),
     subtleText = LightMutedText
@@ -69,11 +88,34 @@ val LocalHKPayColors = staticCompositionLocalOf { DarkExtraColors }
 private val DarkColorScheme = darkColorScheme(
     primary = ElectricBlue,
     onPrimary = Color.White,
+    primaryContainer = DarkSurfaceElevated,
+    onPrimaryContainer = CyanSoft,
+    secondary = CyanGlow,
+    onSecondary = DarkBackground,
+    secondaryContainer = Color(0xFF082D44),
+    onSecondaryContainer = CyanSoft,
+    tertiary = IndigoInfo,
+    onTertiary = Color.White,
+    background = DarkBackground,
+    onBackground = DarkPrimaryText,
+    surface = DarkSurface,
+    onSurface = DarkPrimaryText,
+    surfaceVariant = DarkSurfaceElevated,
+    onSurfaceVariant = DarkSecondaryText,
+    outline = DarkBorder,
+    outlineVariant = Color(0xFF1B2742),
+    error = CrimsonError,
+    onError = Color.White
+)
+
+private val NavyColorScheme = darkColorScheme(
+    primary = ElectricBlueBright,
+    onPrimary = Color.White,
     primaryContainer = NavyElevated,
     onPrimaryContainer = CyanSoft,
     secondary = CyanGlow,
     onSecondary = NavyVoid,
-    secondaryContainer = Color(0xFF063751),
+    secondaryContainer = Color(0xFF08395C),
     onSecondaryContainer = CyanSoft,
     tertiary = IndigoInfo,
     onTertiary = Color.White,
@@ -84,7 +126,7 @@ private val DarkColorScheme = darkColorScheme(
     surfaceVariant = NavySurface,
     onSurfaceVariant = SteelText,
     outline = NavyBorder,
-    outlineVariant = Color(0xFF15254C),
+    outlineVariant = Color(0xFF193275),
     error = CrimsonError,
     onError = Color.White
 )
@@ -107,25 +149,28 @@ private val LightColorScheme = lightColorScheme(
     surfaceVariant = LightSurfaceVariant,
     onSurfaceVariant = LightMutedText,
     outline = LightBorder,
-    outlineVariant = Color(0xFFE2EBF7),
-    error = Color(0xFFD92D4A),
+    outlineVariant = Color(0xFFDCE7F5),
+    error = Color(0xFFC9203D),
     onError = Color.White
 )
 
 @Composable
 fun HKPayTheme(
-    themeMode: ThemeMode = ThemeMode.DARK,
+    themeMode: ThemeMode = ThemeMode.NAVY,
     content: @Composable () -> Unit
 ) {
-    val systemDark = isSystemInDarkTheme()
-    val useDark = when (themeMode) {
-        ThemeMode.DARK -> true
-        ThemeMode.LIGHT -> false
-        ThemeMode.SYSTEM -> systemDark
-    }
+    val useDarkSystemBars = themeMode != ThemeMode.LIGHT
 
-    val colorScheme = if (useDark) DarkColorScheme else LightColorScheme
-    val extraColors = if (useDark) DarkExtraColors else LightExtraColors
+    val colorScheme = when (themeMode) {
+        ThemeMode.DARK -> DarkColorScheme
+        ThemeMode.NAVY -> NavyColorScheme
+        ThemeMode.LIGHT -> LightColorScheme
+    }
+    val extraColors = when (themeMode) {
+        ThemeMode.DARK -> DarkExtraColors
+        ThemeMode.NAVY -> NavyExtraColors
+        ThemeMode.LIGHT -> LightExtraColors
+    }
 
     val view = LocalView.current
     if (!view.isInEditMode) {
@@ -133,8 +178,8 @@ fun HKPayTheme(
             val window = (view.context as? Activity)?.window
             if (window != null) {
                 val controller = WindowCompat.getInsetsController(window, view)
-                controller.isAppearanceLightStatusBars = !useDark
-                controller.isAppearanceLightNavigationBars = !useDark
+                controller.isAppearanceLightStatusBars = !useDarkSystemBars
+                controller.isAppearanceLightNavigationBars = !useDarkSystemBars
             }
         }
     }

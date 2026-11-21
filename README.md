@@ -17,18 +17,24 @@ A native Android application built with **Kotlin** and **Jetpack Compose (Materi
 
 ## Key Features Implemented
 
-- **Authentication & Biometric Unlock:** Splash screen, Welcome, Sign In, Sign Up (with optional Referral Code), Forgot Password, Email Verification flow, Password visibility toggle, Password change, persistent auth state, and optional **Biometric Authentication** (Fingerprint & Face Unlock via AndroidX BiometricPrompt) toggleable in Profile settings for app-launch unlock and sensitive actions (revealing card details, confirming orders, submitting payment proof, changing password).
-- **In-App Tutorials:** Interactive 4-step walkthrough (`HorizontalPager`) with visual UI mockups covering User Registration, Browsing Card Packages, Card Ordering & Delivery Tracking, and KYC Verification—with Back, Next, Complete, and Skip controls accessible from Dashboard and Profile.
-- **Referral Program:** Every user receives a unique `HKR...` referral code in Profile & Refer & Earn. New users can apply a friend's referral code at Sign Up (or claim once in the Referral Center); both referrer and referee receive a `$5.00` card fee credit tracked in Firebase RTDB (`/referral_codes`, `/referrals`, `/referral_rewards`) and redeemable at checkout.
-- **Physical Card Selection (`HorizontalPager`):** Swipeable physical card finish showcase (`Obsidian Navy`, `Electric Cyan`, `Midnight Graphite`, `Royal Aurora`) with animated depth/scale preview paired directly with live Firebase card packages.
-- **User Dashboard:** Welcome header with HK PAY branding, Unique User ID (`HKP-XXXXXX`), Account & KYC status badges, KPIs (Orders, Active Cards, Pending), Quick Actions grid, Referral Credit card, Live Currency Rates preview, Recent Orders, and Notification Center badge.
-- **Physical Card Store (`/card_packages`):** Streams live card packages from Firebase Realtime Database with full pricing breakdown (Card Price, Issuing Fee, Delivery Fee, Total Price), KYC requirement, and availability sync.
-- **Buy Physical Card & Payment System:** Full shipping checkout form with selected card finish preview, referral fee credit toggle, unique Order ID generation, configurable payment methods (`bKash`, `Nagad`, `Rocket`, `Bank Transfer`, `Provider Gateway`) loaded from `/app_settings/paymentMethods`, receipt image upload to Firebase Storage via Android Photo Picker, and backend-controlled payment confirmation.
-- **My Orders & 14-Step Tracking:** Live order status timeline (`Order Placed` through `Active`, `Cancelled`, `Refunded`), selected finish, referral credit breakdown, courier tracking, and payment completion flow.
-- **My Physical Cards (`/cards/{uid}`):** Displays issued cards with HK PAY branding, Cardholder Name, Type, Network, Status, Activation Status, Issuing Provider, Balance (when provider-supported), and biometric- & HTTPS-gated Reveal/Hide/Copy card details (never storing plaintext PAN/CVV in Firebase).
-- **KYC Verification:** NID / Passport form, Date of Birth picker, Photo Picker document & optional selfie upload to `/kyc_uploads/{uid}` in Firebase Storage, and live KYC status sync.
-- **Currency Exchange Rates (`/currency_rates`):** Live USD/EUR/GBP to BDT rates with Card Purchase Rate, Service Charge, Last Updated timestamp, and interactive Card Purchase Calculator.
-- **Profile, Transactions, Notifications & Support:** Profile photo upload, Edit Profile, Biometric Unlock toggle, Referral Code sharing, App Tutorials replay, Light/Dark/System theme selector, Notification preferences, FCM push notifications (`HKPayMessagingService`), Transaction History filterable by type, and Customer Support ticketing with real-time reply history.
+- **Fast Startup, Sign Up & Sign In:** Instant startup without artificial splash delays, non-blocking IO-backed Firebase RTDB queries, and parallelized KYC Storage + RTDB persistence.
+- **2-Step Account Creation (Email Link, Phone No-OTP, NID & Liveness):**
+  - Step 1: Full Name, Email (Firebase verification link with `"Open Email Inbox"` launcher), Phone Number (direct entry — no SMS OTP required), Password, and optional Referral Code.
+  - Step 2: Optional or admin-required NID Number, NID Front & Back photos (zero-permission Photo Picker), and live Camera Liveness Verification (`FileProvider` + randomized expression prompt).
+  - Plus Sign In, Forgot Password, Password visibility toggle, Password change, and optional **Biometric Authentication** (Fingerprint & Face Unlock via AndroidX `BiometricPrompt`) for app lock and sensitive actions.
+- **3-Theme System (`Dark`, `Light`, `Navy`) + Header Theme Toggle:** Consistent high-contrast typography and cyan/blue accents tuned per theme, switchable instantly from the clickable theme icon in every screen header or in Profile Settings.
+- **User Dashboard & Card-Linked Balance Show/Hide:** Displays total & per-card balance linked directly to `/cards/{uid}` with a one-tap Show/Hide toggle, Welcome header with HK PAY branding, Unique User ID (`HKP-XXXXXX`), Account & KYC status badges, KPIs, Quick Actions grid, Referral Credit card, Live Currency Rates preview, Recent Card Activity, Recent Orders, and Notification Center badge.
+- **In-App Tutorials:** Interactive 4-step walkthrough (`HorizontalPager`) covering Account Registration + NID & Liveness, Card Packages & Balance Privacy, Ordering & Live Notifications, and KYC & Themes—with Back, Next, Complete, and Skip controls.
+- **Referral Program:** Unique `HKR...` referral code in Profile & Refer & Earn, redeemable at Sign Up or Referral Center for dual-sided card fee credits tracked in Firebase RTDB (`/referral_codes`, `/referrals`, `/referral_rewards`).
+- **Physical Card Selection (`HorizontalPager`) & Store (`/card_packages`):** Swipeable physical card finish showcase (`Obsidian Navy`, `Electric Cyan`, `Midnight Graphite`, `Royal Aurora`) paired with live Firebase card packages showing full price breakdowns, KYC requirement, and availability.
+- **Buy Physical Card & Payment System:** Auto-prefilled shipping checkout from the user's Profile address, referral credit toggle, configurable payment methods from `/app_settings/paymentMethods`, receipt upload via Photo Picker, and backend-controlled payment confirmation.
+- **My Orders & 14-Step Tracking:** Real-time order status timeline (`Order Placed` through `Active`, `Cancelled`, `Refunded`), selected finish, courier tracking, and payment proof upload.
+- **My Physical Cards (`/cards/{uid}`):** Displays issued cards with linked balance show/hide toggle, Cardholder Name, Type, Network, Status, Activation Status, Issuing Provider, embedded Recent Card Activity, and biometric- & HTTPS-gated Reveal/Hide/Copy details.
+- **Recent Card Activity / Transaction History (`/transactions/{uid}`):** Reusable `RecentCardActivitySection` component on Dashboard & My Cards plus a dedicated filterable & searchable Transaction History screen (filter by transaction type and linked card).
+- **Premium Edit Profile (13 Fields + Completion Progress):** Profile completion progress bar (`%`), Profile Photo upload, Full Name, Phone, Date of Birth picker, Gender, NID Number, Occupation, Monthly Income Range, Preferred Currency, and Full Delivery Address (`Street`, `City/Upazila`, `District`, `Postal Code`, `Country`).
+- **Personalized FCM Order Notifications (`HKPayMessagingService` & `NotificationHelper`):** Subscribes to `all_users`, `user_{uid}`, and `orders_{uid}` topics; parses personalized order status payloads (`orderId`, `orderStatus`, `customerName`, `cardName`, `trackingNumber`) as well as live RTDB status transitions, with tap-to-open deep linking straight to `OrderDetailRoute`.
+- **Full Admin Remote Control (`/app_settings`):** Dynamically enforces Maintenance Mode shields, Registration toggle, Card Ordering pause, Referral Program & Bonus Amount, KYC/Selfie/Liveness requirements, Global System Banners, Support contact info (`supportEmail`, `supportPhone`, `supportWhatsApp`, `supportHours`), and Payment Methods without any Admin UI inside the user app.
+- **APK Size Optimization:** Removed heavy unused dependencies (`material-icons-extended`, `logging-interceptor`), replaced with lightweight custom Material vector icons (`HKPayIcons`), enabled R8 minification + resource shrinking + PNG crunching on release builds, and filtered locales (`en`, `bn`).
 
 ---
 
@@ -49,7 +55,7 @@ firebase deploy --only database,storage
 ### 2. Firebase Console Checklist
 1. **Authentication → Sign-in method:** Enable **Email/Password**.
 2. **App Check:** Register your SHA-256 fingerprint for `com.hkpay.app` with **Play Integrity** (and register debug tokens during local testing).
-3. **Cloud Messaging (FCM):** Enable Firebase Cloud Messaging for push notifications on order, payment, KYC, and security events.
+3. **Cloud Messaging (FCM):** Enable Firebase Cloud Messaging for personalized push notifications on order status changes (`orderId`, `orderStatus`, `customerName`, `cardName`, `trackingNumber`).
 
 ### 3. Admin-Managed Realtime Database Nodes (Backend / Admin Controlled)
 This user app does **not** include an admin panel. Populate these read-only nodes from your authorized backend/admin service:
@@ -88,10 +94,22 @@ This user app does **not** include an admin panel. Populate these read-only node
 - `/app_settings`:
   ```json
   {
+    "maintenanceMode": false,
+    "maintenanceMessage": "",
+    "registrationEnabled": true,
+    "cardOrderingEnabled": true,
+    "referralProgramEnabled": true,
+    "referralBonusAmount": 5.0,
+    "kycRequiredForOrder": true,
     "kycSelfieEnabled": true,
-    "supportEmail": "support@hkpay.example",
-    "supportHours": "09:00 - 21:00 BDT",
+    "livenessCheckRequired": true,
+    "bannerTitle": "Welcome to HK PAY",
     "systemNotice": "",
+    "supportEmail": "support@hkpay.example",
+    "supportPhone": "+8801700000000",
+    "supportWhatsApp": "+8801700000000",
+    "supportHours": "09:00 - 21:00 BDT",
+    "minSupportedVersionCode": 1,
     "paymentMethods": {
       "bkash": {
         "name": "bKash",

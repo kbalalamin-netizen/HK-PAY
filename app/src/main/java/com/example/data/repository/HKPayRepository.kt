@@ -24,6 +24,9 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
@@ -66,6 +69,7 @@ class HKPayRepository(
                 "email" to email,
                 "phone" to "",
                 "country" to "Bangladesh",
+                "preferredCurrency" to "USD",
                 "photoUrl" to "",
                 "joinDate" to now,
                 "kycStatus" to "Not Submitted",
@@ -82,20 +86,32 @@ class HKPayRepository(
                     "marketingNotices" to false
                 )
             )
-            runCatching { ref.setValue(payload).awaitResult() }
-            runCatching {
-                database.reference.child("referral_codes").child(fallbackCode).setValue(
-                    mapOf("uid" to uid, "ownerName" to cleanName, "createdAt" to now)
-                ).awaitResult()
+            coroutineScope {
+                val t1 = async { runCatching { ref.setValue(payload).awaitResult() } }
+                val t2 = async {
+                    runCatching {
+                        database.reference.child("referral_codes").child(fallbackCode).setValue(
+                            mapOf("uid" to uid, "ownerName" to cleanName, "createdAt" to now)
+                        ).awaitResult()
+                    }
+                }
+                t1.await()
+                t2.await()
             }
         } else if (snap.stringValue("referralCode").isBlank()) {
             val now = System.currentTimeMillis()
             val ownerName = snap.stringValue("fullName", default = fullName.ifBlank { "HK PAY Member" })
-            runCatching { ref.child("referralCode").setValue(fallbackCode).awaitResult() }
-            runCatching {
-                database.reference.child("referral_codes").child(fallbackCode).setValue(
-                    mapOf("uid" to uid, "ownerName" to ownerName, "createdAt" to now)
-                ).awaitResult()
+            coroutineScope {
+                val t1 = async { runCatching { ref.child("referralCode").setValue(fallbackCode).awaitResult() } }
+                val t2 = async {
+                    runCatching {
+                        database.reference.child("referral_codes").child(fallbackCode).setValue(
+                            mapOf("uid" to uid, "ownerName" to ownerName, "createdAt" to now)
+                        ).awaitResult()
+                    }
+                }
+                t1.await()
+                t2.await()
             }
         }
     }
@@ -151,6 +167,25 @@ class HKPayRepository(
         return database.reference.child("app_settings")
             .observeSnapshots()
             .map { snap -> parseAppSettings(snap) }
+            .catch { emit(AppSettings()) }
+    }
+
+    fun observePublicAppConfig(): Flow<AppSettings> {
+        val settingsRef = database.reference.child("app_settings")
+        return settingsRef.child("maintenanceMode")
+            .observeSnapshots()
+            .map { maintSnap ->
+                val maint = maintSnap.getValue(Boolean::class.java) ?: false
+                val msg = runCatching { settingsRef.child("maintenanceMessage").get().awaitResult().value?.toString().orEmpty() }.getOrDefault("")
+                val reg = runCatching { settingsRef.child("registrationEnabled").get().awaitResult().getValue(Boolean::class.java) ?: true }.getOrDefault(true)
+                val bonus = runCatching { settingsRef.child("referralBonusAmount").get().awaitResult().value?.toString()?.toDoubleOrNull() ?: AuthRepository.REFERRAL_BONUS_USD }.getOrDefault(AuthRepository.REFERRAL_BONUS_USD)
+                AppSettings(
+                    maintenanceMode = maint,
+                    maintenanceMessage = msg,
+                    registrationEnabled = reg,
+                    referralBonusAmount = bonus
+                )
+            }
             .catch { emit(AppSettings()) }
     }
 
@@ -236,7 +271,8 @@ class HKPayRepository(
     suspend fun claimReferralCode(
         uid: String,
         userFullName: String,
-        codeInput: String
+        codeInput: String,
+        bonusAmount: Double = AuthRepository.REFERRAL_BONUS_USD
     ): Result<Unit> = runCatching {
         val cleanCode = codeInput.trim().uppercase(Locale.US)
         require(cleanCode.isNotBlank()) { "Please enter a referral code." }
@@ -256,64 +292,75 @@ class HKPayRepository(
         }
 
         val now = System.currentTimeMillis()
-        database.reference.child("users").child(uid).updateChildren(
-            mapOf(
-                "referredBy" to referrerUid,
-                "referredByCode" to cleanCode
-            )
-        ).awaitResult()
-
-        database.reference.child("referrals").child(referrerUid).child(uid).setValue(
-            mapOf(
-                "referredUserId" to uid,
-                "referredName" to userFullName.ifBlank { "HK PAY Member" },
-                "rewardAmount" to AuthRepository.REFERRAL_BONUS_USD,
-                "refereeBonus" to AuthRepository.REFERRAL_BONUS_USD,
-                "status" to "Credited",
-                "createdAt" to now
-            )
-        ).awaitResult()
-
-        database.reference.child("referral_rewards").child(uid).child("WELCOME_${uid.take(6)}").setValue(
-            mapOf(
-                "rewardId" to "WELCOME_${uid.take(6)}",
-                "sourceUid" to uid,
-                "title" to "Welcome Referral Bonus ($cleanCode)",
-                "amount" to AuthRepository.REFERRAL_BONUS_USD,
-                "currency" to "USD",
-                "type" to "Welcome Fee Credit",
-                "status" to "Available",
-                "createdAt" to now
-            )
-        ).awaitResult()
-
         val referrerRewardId = "REF_${uid.take(8)}"
-        database.reference.child("referral_rewards").child(referrerUid).child(referrerRewardId).setValue(
-            mapOf(
-                "rewardId" to referrerRewardId,
-                "sourceUid" to uid,
-                "title" to "Friend Joined: ${userFullName.ifBlank { "HK PAY Member" }}",
-                "amount" to AuthRepository.REFERRAL_BONUS_USD,
-                "currency" to "USD",
-                "type" to "Referral Bonus",
-                "status" to "Available",
-                "createdAt" to now
-            )
-        ).awaitResult()
-
         val notifRef = database.reference.child("notifications").child(referrerUid).push()
-        notifRef.setValue(
-            mapOf(
-                "id" to (notifRef.key ?: ""),
-                "userId" to referrerUid,
-                "title" to "Referral Reward Earned!",
-                "message" to "${userFullName.ifBlank { "A friend" }} redeemed your referral code ($cleanCode). You received $${String.format(Locale.US, "%.2f", AuthRepository.REFERRAL_BONUS_USD)} fee credit.",
-                "type" to "Referral Bonus",
-                "referenceId" to referrerRewardId,
-                "isRead" to false,
-                "createdAt" to now
+
+        coroutineScope {
+            awaitAll(
+                async {
+                    database.reference.child("users").child(uid).updateChildren(
+                        mapOf(
+                            "referredBy" to referrerUid,
+                            "referredByCode" to cleanCode
+                        )
+                    ).awaitResult()
+                },
+                async {
+                    database.reference.child("referrals").child(referrerUid).child(uid).setValue(
+                        mapOf(
+                            "referredUserId" to uid,
+                            "referredName" to userFullName.ifBlank { "HK PAY Member" },
+                            "rewardAmount" to bonusAmount,
+                            "refereeBonus" to bonusAmount,
+                            "status" to "Credited",
+                            "createdAt" to now
+                        )
+                    ).awaitResult()
+                },
+                async {
+                    database.reference.child("referral_rewards").child(uid).child("WELCOME_${uid.take(6)}").setValue(
+                        mapOf(
+                            "rewardId" to "WELCOME_${uid.take(6)}",
+                            "sourceUid" to uid,
+                            "title" to "Welcome Referral Bonus ($cleanCode)",
+                            "amount" to bonusAmount,
+                            "currency" to "USD",
+                            "type" to "Welcome Fee Credit",
+                            "status" to "Available",
+                            "createdAt" to now
+                        )
+                    ).awaitResult()
+                },
+                async {
+                    database.reference.child("referral_rewards").child(referrerUid).child(referrerRewardId).setValue(
+                        mapOf(
+                            "rewardId" to referrerRewardId,
+                            "sourceUid" to uid,
+                            "title" to "Friend Joined: ${userFullName.ifBlank { "HK PAY Member" }}",
+                            "amount" to bonusAmount,
+                            "currency" to "USD",
+                            "type" to "Referral Bonus",
+                            "status" to "Available",
+                            "createdAt" to now
+                        )
+                    ).awaitResult()
+                },
+                async {
+                    notifRef.setValue(
+                        mapOf(
+                            "id" to (notifRef.key ?: ""),
+                            "userId" to referrerUid,
+                            "title" to "Referral Reward Earned!",
+                            "message" to "${userFullName.ifBlank { "A friend" }} redeemed your referral code ($cleanCode). You received $${String.format(Locale.US, "%.2f", bonusAmount)} fee credit.",
+                            "type" to "Referral Bonus",
+                            "referenceId" to referrerRewardId,
+                            "isRead" to false,
+                            "createdAt" to now
+                        )
+                    ).awaitResult()
+                }
             )
-        ).awaitResult()
+        }
         Unit
     }
 
@@ -321,12 +368,32 @@ class HKPayRepository(
         uid: String,
         fullName: String,
         phone: String,
-        country: String
+        country: String,
+        dateOfBirth: String,
+        gender: String,
+        nidNumber: String,
+        occupation: String,
+        monthlyIncomeRange: String,
+        preferredCurrency: String,
+        streetAddress: String,
+        cityUpazila: String,
+        district: String,
+        postalCode: String
     ): Result<Unit> = runCatching {
         val updates = mapOf(
             "fullName" to fullName.trim(),
             "phone" to phone.trim(),
             "country" to country.trim(),
+            "dateOfBirth" to dateOfBirth.trim(),
+            "gender" to gender.trim(),
+            "nidNumber" to nidNumber.trim(),
+            "occupation" to occupation.trim(),
+            "monthlyIncomeRange" to monthlyIncomeRange.trim(),
+            "preferredCurrency" to preferredCurrency.trim().ifBlank { "USD" },
+            "streetAddress" to streetAddress.trim(),
+            "cityUpazila" to cityUpazila.trim(),
+            "district" to district.trim(),
+            "postalCode" to postalCode.trim(),
             "updatedAt" to System.currentTimeMillis()
         )
         database.reference.child("users").child(uid).updateChildren(updates).awaitResult()
@@ -427,17 +494,6 @@ class HKPayRepository(
             "timeline" to initialTimeline
         )
 
-        database.reference.child("orders").child(uid).child(orderId).setValue(orderMap).awaitResult()
-
-        if (appliedDiscount > 0.0 && availableRewardIdsToMark.isNotEmpty()) {
-            availableRewardIdsToMark.forEach { rewardId ->
-                runCatching {
-                    database.reference.child("referral_rewards").child(uid).child(rewardId)
-                        .child("status").setValue("Applied to $orderId").awaitResult()
-                }
-            }
-        }
-
         val txId = "TXN-${now.toString().takeLast(6)}-${UUID.randomUUID().toString().take(4).uppercase(Locale.US)}"
         val txMap = mapOf(
             "txId" to txId,
@@ -452,7 +508,6 @@ class HKPayRepository(
             "description" to "${cardPackage.name} physical card order",
             "createdAt" to now
         )
-        database.reference.child("transactions").child(uid).child(txId).setValue(txMap).awaitResult()
 
         val notifRef = database.reference.child("notifications").child(uid).push()
         val notifMap = mapOf(
@@ -465,7 +520,25 @@ class HKPayRepository(
             "isRead" to false,
             "createdAt" to now
         )
-        notifRef.setValue(notifMap).awaitResult()
+
+        coroutineScope {
+            val jobs = mutableListOf<kotlinx.coroutines.Deferred<Any?>>(
+                async { database.reference.child("orders").child(uid).child(orderId).setValue(orderMap).awaitResult() },
+                async { database.reference.child("transactions").child(uid).child(txId).setValue(txMap).awaitResult() },
+                async { notifRef.setValue(notifMap).awaitResult() }
+            )
+            if (appliedDiscount > 0.0 && availableRewardIdsToMark.isNotEmpty()) {
+                availableRewardIdsToMark.forEach { rewardId ->
+                    jobs.add(async {
+                        runCatching {
+                            database.reference.child("referral_rewards").child(uid).child(rewardId)
+                                .child("status").setValue("Applied to $orderId").awaitResult()
+                        }
+                    })
+                }
+            }
+            jobs.awaitAll()
+        }
 
         orderId
     }
@@ -514,8 +587,6 @@ class HKPayRepository(
             "timeline" to timelineMap
         )
 
-        database.reference.child("orders").child(uid).child(order.orderId).updateChildren(updates).awaitResult()
-
         val txId = "TXN-${now.toString().takeLast(6)}-${UUID.randomUUID().toString().take(4).uppercase(Locale.US)}"
         val txMap = mapOf(
             "txId" to txId,
@@ -530,7 +601,13 @@ class HKPayRepository(
             "description" to "Payment proof submitted via $paymentMethod (${referenceCode.trim()})",
             "createdAt" to now
         )
-        database.reference.child("transactions").child(uid).child(txId).setValue(txMap).awaitResult()
+
+        coroutineScope {
+            awaitAll(
+                async { database.reference.child("orders").child(uid).child(order.orderId).updateChildren(updates).awaitResult() },
+                async { database.reference.child("transactions").child(uid).child(txId).setValue(txMap).awaitResult() }
+            )
+        }
         Unit
     }
 
@@ -544,29 +621,41 @@ class HKPayRepository(
         frontUri: Uri?,
         backUri: Uri?,
         selfieUri: Uri?,
+        livenessChallenge: String,
         existingFrontUrl: String,
         existingBackUrl: String,
-        existingSelfieUrl: String
+        existingSelfieUrl: String,
+        existingLivenessVerified: Boolean
     ): Result<Unit> = runCatching {
         val now = System.currentTimeMillis()
-        val frontUrl = if (frontUri != null) {
-            val ref = storage.reference.child("kyc_uploads/$uid/front_$now.jpg")
-            ref.putFile(frontUri).awaitResult()
-            ref.downloadUrl.awaitResult().toString()
-        } else existingFrontUrl
+        val (frontUrl, backUrl, selfieUrl) = withContext(Dispatchers.IO) {
+            coroutineScope {
+                val frontTask = async {
+                    if (frontUri != null) {
+                        val ref = storage.reference.child("kyc_uploads/$uid/front_$now.jpg")
+                        ref.putFile(frontUri).awaitResult()
+                        ref.downloadUrl.awaitResult().toString()
+                    } else existingFrontUrl
+                }
+                val backTask = async {
+                    if (backUri != null) {
+                        val ref = storage.reference.child("kyc_uploads/$uid/back_$now.jpg")
+                        ref.putFile(backUri).awaitResult()
+                        ref.downloadUrl.awaitResult().toString()
+                    } else existingBackUrl
+                }
+                val selfieTask = async {
+                    if (selfieUri != null) {
+                        val ref = storage.reference.child("kyc_uploads/$uid/selfie_$now.jpg")
+                        ref.putFile(selfieUri).awaitResult()
+                        ref.downloadUrl.awaitResult().toString()
+                    } else existingSelfieUrl
+                }
+                Triple(frontTask.await(), backTask.await(), selfieTask.await())
+            }
+        }
 
-        val backUrl = if (backUri != null) {
-            val ref = storage.reference.child("kyc_uploads/$uid/back_$now.jpg")
-            ref.putFile(backUri).awaitResult()
-            ref.downloadUrl.awaitResult().toString()
-        } else existingBackUrl
-
-        val selfieUrl = if (selfieUri != null) {
-            val ref = storage.reference.child("kyc_uploads/$uid/selfie_$now.jpg")
-            ref.putFile(selfieUri).awaitResult()
-            ref.downloadUrl.awaitResult().toString()
-        } else existingSelfieUrl
-
+        val livenessOk = selfieUri != null || existingLivenessVerified || selfieUrl.isNotBlank()
         val kycMap = mapOf(
             "userId" to uid,
             "fullName" to fullName.trim(),
@@ -577,26 +666,42 @@ class HKPayRepository(
             "frontDocumentUrl" to frontUrl,
             "backDocumentUrl" to backUrl,
             "selfieUrl" to selfieUrl,
+            "livenessChallenge" to livenessChallenge,
+            "livenessTimestamp" to if (selfieUri != null) now else 0L,
+            "livenessVerified" to livenessOk,
             "status" to "Pending",
             "rejectionReason" to "",
             "submittedAt" to now,
             "reviewedAt" to 0L
         )
 
-        database.reference.child("kyc_submissions").child(uid).setValue(kycMap).awaitResult()
-
         val notifRef = database.reference.child("notifications").child(uid).push()
         val notifMap = mapOf(
             "id" to (notifRef.key ?: ""),
             "userId" to uid,
             "title" to "KYC Documents Submitted",
-            "message" to "Your $documentType verification is under review. You will be notified once verified.",
+            "message" to "Your $documentType verification and liveness check are under review. You will be notified once verified.",
             "type" to "KYC Update",
             "referenceId" to uid,
             "isRead" to false,
             "createdAt" to now
         )
-        notifRef.setValue(notifMap).awaitResult()
+
+        coroutineScope {
+            awaitAll(
+                async { database.reference.child("kyc_submissions").child(uid).setValue(kycMap).awaitResult() },
+                async {
+                    database.reference.child("users").child(uid).updateChildren(
+                        mapOf(
+                            "nidNumber" to documentNumber.trim(),
+                            "livenessVerified" to livenessOk,
+                            "livenessChallenge" to livenessChallenge
+                        )
+                    ).awaitResult()
+                },
+                async { notifRef.setValue(notifMap).awaitResult() }
+            )
+        }
         Unit
     }
 
@@ -604,6 +709,30 @@ class HKPayRepository(
         if (uid.isBlank() || notifId.isBlank()) return
         runCatching {
             database.reference.child("notifications").child(uid).child(notifId).child("isRead").setValue(true).awaitResult()
+        }
+    }
+
+    suspend fun recordInAppOrderNotification(
+        uid: String,
+        title: String,
+        message: String,
+        orderId: String
+    ) {
+        if (uid.isBlank()) return
+        runCatching {
+            val notifRef = database.reference.child("notifications").child(uid).push()
+            notifRef.setValue(
+                mapOf(
+                    "id" to (notifRef.key ?: ""),
+                    "userId" to uid,
+                    "title" to title,
+                    "message" to message,
+                    "type" to "Order Status",
+                    "referenceId" to orderId,
+                    "isRead" to false,
+                    "createdAt" to System.currentTimeMillis()
+                )
+            ).awaitResult()
         }
     }
 
@@ -657,8 +786,12 @@ class HKPayRepository(
             "timestamp" to now
         )
         val ticketRef = database.reference.child("support_tickets").child(uid).child(ticketId)
-        ticketRef.child("replies").child(replyId).setValue(replyMap).awaitResult()
-        ticketRef.child("updatedAt").setValue(now).awaitResult()
+        coroutineScope {
+            awaitAll(
+                async { ticketRef.child("replies").child(replyId).setValue(replyMap).awaitResult() },
+                async { ticketRef.child("updatedAt").setValue(now).awaitResult() }
+            )
+        }
         Unit
     }
 
@@ -702,6 +835,19 @@ class HKPayRepository(
             email = snap.stringValue("email"),
             phone = snap.stringValue("phone", "phoneNumber"),
             country = snap.stringValue("country", default = "Bangladesh"),
+            dateOfBirth = snap.stringValue("dateOfBirth"),
+            gender = snap.stringValue("gender"),
+            nidNumber = snap.stringValue("nidNumber"),
+            occupation = snap.stringValue("occupation"),
+            monthlyIncomeRange = snap.stringValue("monthlyIncomeRange"),
+            preferredCurrency = snap.stringValue("preferredCurrency", default = "USD"),
+            streetAddress = snap.stringValue("streetAddress"),
+            cityUpazila = snap.stringValue("cityUpazila"),
+            district = snap.stringValue("district"),
+            postalCode = snap.stringValue("postalCode"),
+            livenessVerified = snap.boolValue("livenessVerified", default = false),
+            livenessChallenge = snap.stringValue("livenessChallenge"),
+            livenessTimestamp = snap.longValue("livenessTimestamp"),
             photoUrl = snap.stringValue("photoUrl", "avatarUrl"),
             joinDate = snap.longValue("joinDate", "createdAt"),
             kycStatus = snap.stringValue("kycStatus", default = "Not Submitted"),
@@ -836,6 +982,9 @@ class HKPayRepository(
             frontDocumentUrl = snap.stringValue("frontDocumentUrl"),
             backDocumentUrl = snap.stringValue("backDocumentUrl"),
             selfieUrl = snap.stringValue("selfieUrl"),
+            livenessChallenge = snap.stringValue("livenessChallenge"),
+            livenessTimestamp = snap.longValue("livenessTimestamp"),
+            livenessVerified = snap.boolValue("livenessVerified", default = false),
             status = snap.stringValue("status", default = "Pending"),
             rejectionReason = snap.stringValue("rejectionReason"),
             submittedAt = snap.longValue("submittedAt"),
@@ -880,10 +1029,22 @@ class HKPayRepository(
         }
         return AppSettings(
             paymentMethods = methods,
-            kycSelfieEnabled = snap.boolValue("kycSelfieEnabled", default = false),
+            maintenanceMode = snap.boolValue("maintenanceMode", default = false),
+            maintenanceMessage = snap.stringValue("maintenanceMessage"),
+            registrationEnabled = snap.boolValue("registrationEnabled", default = true),
+            cardOrderingEnabled = snap.boolValue("cardOrderingEnabled", default = true),
+            referralProgramEnabled = snap.boolValue("referralProgramEnabled", default = true),
+            referralBonusAmount = snap.doubleValue("referralBonusAmount", default = AuthRepository.REFERRAL_BONUS_USD),
+            kycRequiredForOrder = snap.boolValue("kycRequiredForOrder", default = true),
+            kycSelfieEnabled = snap.boolValue("kycSelfieEnabled", default = true),
+            livenessCheckRequired = snap.boolValue("livenessCheckRequired", default = true),
             supportEmail = snap.stringValue("supportEmail"),
+            supportPhone = snap.stringValue("supportPhone"),
+            supportWhatsApp = snap.stringValue("supportWhatsApp"),
             supportHours = snap.stringValue("supportHours"),
-            systemNotice = snap.stringValue("systemNotice")
+            bannerTitle = snap.stringValue("bannerTitle"),
+            systemNotice = snap.stringValue("systemNotice"),
+            minSupportedVersionCode = snap.longValue("minSupportedVersionCode", default = 1L).toInt()
         )
     }
 

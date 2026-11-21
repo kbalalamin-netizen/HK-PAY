@@ -22,11 +22,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Notifications
-import androidx.compose.material.icons.rounded.SupportAgent
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
@@ -48,13 +46,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.model.SupportTicket
+import com.example.data.model.ThemeMode
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.GlassCard
 import com.example.ui.components.HKPayTopBar
 import com.example.ui.components.StatusBadge
+import com.example.ui.components.TransactionActivityCard
+import com.example.ui.theme.HKPayIcons
 import com.example.ui.theme.LocalHKPayColors
 import com.example.ui.viewmodel.MainDashboardState
 import com.example.util.FormatUtils
@@ -62,20 +62,39 @@ import com.example.util.FormatUtils
 @Composable
 fun TransactionHistoryScreen(
     state: MainDashboardState,
-    onBack: () -> Unit
+    themeMode: ThemeMode,
+    onToggleTheme: () -> Unit,
+    onBack: () -> Unit,
+    onOpenOrder: (String) -> Unit
 ) {
-    val extra = LocalHKPayColors.current
     var selectedType by remember { mutableStateOf("All") }
+    var selectedCardId by remember { mutableStateOf("All") }
+    var query by remember { mutableStateOf("") }
     val types = listOf("All", "Card Order", "Card Issuing", "Payment", "Refund", "Card Funding")
 
-    val filtered = remember(state.transactions, selectedType) {
-        if (selectedType == "All") state.transactions
-        else state.transactions.filter { it.txType.equals(selectedType, ignoreCase = true) }
+    val filtered = remember(state.transactions, selectedType, selectedCardId, query) {
+        state.transactions.filter { tx ->
+            val typeMatch = selectedType == "All" || tx.txType.equals(selectedType, ignoreCase = true)
+            val cardMatch = selectedCardId == "All" || tx.cardId == selectedCardId
+            val queryMatch = query.isBlank() ||
+                tx.txId.contains(query, ignoreCase = true) ||
+                tx.orderId.contains(query, ignoreCase = true) ||
+                tx.description.contains(query, ignoreCase = true) ||
+                tx.txType.contains(query, ignoreCase = true)
+            typeMatch && cardMatch && queryMatch
+        }
     }
 
     Scaffold(
         containerColor = Color.Transparent,
-        topBar = { HKPayTopBar(title = "Transaction History", onBack = onBack) }
+        topBar = {
+            HKPayTopBar(
+                title = "Card Activity & History",
+                onBack = onBack,
+                themeMode = themeMode,
+                onToggleTheme = onToggleTheme
+            )
+        }
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -91,6 +110,19 @@ fun TransactionHistoryScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        label = { Text("Search by ID, Order ID, or Activity") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("tx_search_input"),
+                        shape = RoundedCornerShape(14.dp)
+                    )
+                }
+
+                item {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(types) { type ->
                             FilterChip(
@@ -102,60 +134,43 @@ fun TransactionHistoryScreen(
                     }
                 }
 
+                if (state.issuedCards.isNotEmpty()) {
+                    item {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            item {
+                                FilterChip(
+                                    selected = selectedCardId == "All",
+                                    onClick = { selectedCardId = "All" },
+                                    label = { Text("All Cards") }
+                                )
+                            }
+                            items(state.issuedCards, key = { it.cardId }) { card ->
+                                FilterChip(
+                                    selected = selectedCardId == card.cardId,
+                                    onClick = { selectedCardId = card.cardId },
+                                    label = { Text("Card ••${card.last4.ifBlank { card.cardId.takeLast(4) }}") }
+                                )
+                            }
+                        }
+                    }
+                }
+
                 if (filtered.isEmpty()) {
                     item {
                         EmptyStateCard(
-                            icon = Icons.AutoMirrored.Rounded.ReceiptLong,
-                            title = "No Transactions Yet",
-                            subtitle = "Your card orders, payments, issuing fees, and refunds appear here."
+                            icon = HKPayIcons.ReceiptLong,
+                            title = "No Transactions Found",
+                            subtitle = "Your card orders, payments, issuing fees, loads, and refunds from Firebase RTDB appear here."
                         )
                     }
                 } else {
                     items(filtered, key = { it.txId }) { tx ->
-                        GlassCard(contentPadding = PaddingValues(14.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(tx.txType, style = MaterialTheme.typography.titleSmall)
-                                    Text(
-                                        text = tx.txId,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = extra.cyanGlow
-                                    )
-                                    if (tx.orderId.isNotBlank()) {
-                                        Text(
-                                            text = "Order: ${tx.orderId}",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    Text(
-                                        text = FormatUtils.formatDateTime(tx.createdAt),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text(
-                                        text = FormatUtils.formatMoney(tx.amount, tx.currency),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    if (tx.fee > 0.0) {
-                                        Text(
-                                            text = "Fee: ${FormatUtils.formatMoney(tx.fee, tx.currency)}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    Spacer(Modifier.height(4.dp))
-                                    StatusBadge(status = tx.status)
-                                }
-                            }
-                        }
+                        TransactionActivityCard(
+                            tx = tx,
+                            onClick = if (tx.orderId.isNotBlank()) {
+                                { onOpenOrder(tx.orderId) }
+                            } else null
+                        )
                     }
                 }
             }
@@ -166,6 +181,8 @@ fun TransactionHistoryScreen(
 @Composable
 fun NotificationsScreen(
     state: MainDashboardState,
+    themeMode: ThemeMode,
+    onToggleTheme: () -> Unit,
     onBack: () -> Unit,
     onMarkRead: (String) -> Unit,
     onOpenOrder: (String) -> Unit
@@ -174,7 +191,14 @@ fun NotificationsScreen(
 
     Scaffold(
         containerColor = Color.Transparent,
-        topBar = { HKPayTopBar(title = "Notifications", onBack = onBack) }
+        topBar = {
+            HKPayTopBar(
+                title = "Notifications",
+                onBack = onBack,
+                themeMode = themeMode,
+                onToggleTheme = onToggleTheme
+            )
+        }
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -194,7 +218,7 @@ fun NotificationsScreen(
                         EmptyStateCard(
                             icon = Icons.Rounded.Notifications,
                             title = "No Notifications",
-                            subtitle = "Order updates, KYC reviews, payment confirmations, and security alerts appear here."
+                            subtitle = "Personalized order status updates, KYC reviews, payment confirmations, and security alerts appear here."
                         )
                     }
                 } else {
@@ -239,7 +263,11 @@ fun NotificationsScreen(
                                         )
                                     }
                                     Spacer(Modifier.height(4.dp))
-                                    Text(notif.title, style = MaterialTheme.typography.titleSmall)
+                                    Text(
+                                        notif.title,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
                                     Spacer(Modifier.height(2.dp))
                                     Text(
                                         text = notif.message,
@@ -259,6 +287,8 @@ fun NotificationsScreen(
 @Composable
 fun SupportScreen(
     state: MainDashboardState,
+    themeMode: ThemeMode,
+    onToggleTheme: () -> Unit,
     onBack: () -> Unit,
     onCreateTicket: (String, String, String) -> Unit,
     onSelectTicket: (String) -> Unit
@@ -278,7 +308,14 @@ fun SupportScreen(
 
     Scaffold(
         containerColor = Color.Transparent,
-        topBar = { HKPayTopBar(title = "Customer Support", onBack = onBack) },
+        topBar = {
+            HKPayTopBar(
+                title = "Customer Support",
+                onBack = onBack,
+                themeMode = themeMode,
+                onToggleTheme = onToggleTheme
+            )
+        },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { showCreateDialog = true },
@@ -303,15 +340,44 @@ fun SupportScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                if (state.appSettings.supportEmail.isNotBlank()) {
+                val settings = state.appSettings
+                if (settings.supportEmail.isNotBlank() || settings.supportPhone.isNotBlank() || settings.supportWhatsApp.isNotBlank()) {
                     item {
                         GlassCard(contentPadding = PaddingValues(14.dp)) {
-                            Text("Support Desk", style = MaterialTheme.typography.titleSmall)
                             Text(
-                                text = "${state.appSettings.supportEmail}${if (state.appSettings.supportHours.isNotBlank()) " • ${state.appSettings.supportHours}" else ""}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = extra.cyanGlow
+                                "Support Desk",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
+                            Spacer(Modifier.height(4.dp))
+                            if (settings.supportEmail.isNotBlank()) {
+                                Text(
+                                    text = "Email: ${settings.supportEmail}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = extra.cyanGlow
+                                )
+                            }
+                            if (settings.supportPhone.isNotBlank()) {
+                                Text(
+                                    text = "Phone: ${settings.supportPhone}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (settings.supportWhatsApp.isNotBlank()) {
+                                Text(
+                                    text = "WhatsApp: ${settings.supportWhatsApp}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (settings.supportHours.isNotBlank()) {
+                                Text(
+                                    text = "Hours: ${settings.supportHours}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
@@ -319,7 +385,7 @@ fun SupportScreen(
                 if (state.supportTickets.isEmpty()) {
                     item {
                         EmptyStateCard(
-                            icon = Icons.Rounded.SupportAgent,
+                            icon = HKPayIcons.SupportAgent,
                             title = "No Support Tickets",
                             subtitle = "Need help with an order, payment, or KYC verification? Tap below to open a ticket.",
                             actionLabel = "Create Support Ticket",
@@ -345,7 +411,11 @@ fun SupportScreen(
                                 StatusBadge(status = ticket.status)
                             }
                             Spacer(Modifier.height(6.dp))
-                            Text(ticket.subject, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                ticket.subject,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
                             Spacer(Modifier.height(4.dp))
                             Text(
                                 text = "${ticket.category} • Updated ${FormatUtils.formatDateTime(ticket.updatedAt)}",
@@ -427,6 +497,8 @@ private fun CreateTicketDialog(
 fun SupportDetailScreen(
     ticket: SupportTicket?,
     isSubmitting: Boolean,
+    themeMode: ThemeMode,
+    onToggleTheme: () -> Unit,
     onBack: () -> Unit,
     onSendReply: (String, String) -> Unit
 ) {
@@ -435,7 +507,14 @@ fun SupportDetailScreen(
 
     Scaffold(
         containerColor = Color.Transparent,
-        topBar = { HKPayTopBar(title = ticket?.ticketId ?: "Support Ticket", onBack = onBack) }
+        topBar = {
+            HKPayTopBar(
+                title = ticket?.ticketId ?: "Support Ticket",
+                onBack = onBack,
+                themeMode = themeMode,
+                onToggleTheme = onToggleTheme
+            )
+        }
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -447,7 +526,7 @@ fun SupportDetailScreen(
             if (ticket == null) {
                 Box(Modifier.padding(16.dp)) {
                     EmptyStateCard(
-                        icon = Icons.Rounded.SupportAgent,
+                        icon = HKPayIcons.SupportAgent,
                         title = "Ticket Not Found",
                         subtitle = "Unable to locate this support ticket.",
                         actionLabel = "Back to Support",
@@ -470,7 +549,11 @@ fun SupportDetailScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(ticket.subject, style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    ticket.subject,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
                                 Text(
                                     text = ticket.category,
                                     style = MaterialTheme.typography.bodySmall,
@@ -507,7 +590,11 @@ fun SupportDetailScreen(
                                             color = extra.cyanGlow
                                         )
                                         Spacer(Modifier.height(4.dp))
-                                        Text(reply.message, style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            reply.message,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
                                         Spacer(Modifier.height(4.dp))
                                         Text(
                                             text = FormatUtils.formatDateTime(reply.timestamp),

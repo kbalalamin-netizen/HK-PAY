@@ -21,15 +21,62 @@ class HKPayMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
-        val title = message.notification?.title ?: message.data["title"] ?: "HK PAY Update"
-        val body = message.notification?.body ?: message.data["message"] ?: return
-        val type = message.data["type"] ?: "Order Created"
+        val data = message.data
+        val orderId = data["orderId"] ?: data["referenceId"].orEmpty()
+        val orderStatus = data["orderStatus"].orEmpty()
+        val customerName = data["customerName"]
+            ?: FirebaseAuth.getInstance().currentUser?.displayName.orEmpty()
+        val cardName = data["cardName"] ?: data["packageName"].orEmpty()
+        val trackingNumber = data["trackingNumber"].orEmpty()
+        val type = data["type"] ?: if (orderId.isNotBlank()) "Order Status" else "System Notice"
+
+        val (personalizedTitle, personalizedBody) = if (orderId.isNotBlank() && orderStatus.isNotBlank()) {
+            NotificationHelper.buildPersonalizedOrderMessage(
+                customerName = customerName,
+                packageName = cardName,
+                orderId = orderId,
+                orderStatus = orderStatus,
+                trackingNumber = trackingNumber
+            )
+        } else {
+            val t = message.notification?.title ?: data["title"] ?: "HK PAY Update"
+            val b = message.notification?.body ?: data["message"] ?: data["body"] ?: return
+            t to b
+        }
+
+        val finalTitle = message.notification?.title ?: data["title"] ?: personalizedTitle
+        val finalBody = message.notification?.body ?: data["message"] ?: personalizedBody
 
         NotificationHelper.showNotification(
             context = applicationContext,
-            title = title,
-            body = body,
-            type = type
+            title = finalTitle,
+            body = finalBody,
+            type = type,
+            orderId = orderId
         )
+
+        // Sync incoming personalized push into the signed-in user's notification center
+        val uid = FirebaseAuth.getInstance().currentUser?.uid
+        if (uid != null && data["skipDbSync"] != "true") {
+            val dbRef = FirebaseDatabase.getInstance(HKPayConstants.FIREBASE_DATABASE_URL)
+                .reference
+                .child("notifications")
+                .child(uid)
+            val key = data["notificationId"]?.takeIf { it.isNotBlank() } ?: dbRef.push().key
+            if (!key.isNullOrBlank()) {
+                dbRef.child(key).setValue(
+                    mapOf(
+                        "id" to key,
+                        "userId" to uid,
+                        "title" to finalTitle,
+                        "message" to finalBody,
+                        "type" to type,
+                        "referenceId" to orderId,
+                        "isRead" to false,
+                        "createdAt" to System.currentTimeMillis()
+                    )
+                )
+            }
+        }
     }
 }

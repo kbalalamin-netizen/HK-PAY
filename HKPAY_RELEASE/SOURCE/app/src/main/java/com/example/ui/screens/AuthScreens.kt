@@ -1,5 +1,10 @@
 package com.example.ui.screens
 
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -32,21 +37,15 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.CardGiftcard
-import androidx.compose.material.icons.rounded.CreditCard
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Email
-import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material.icons.rounded.MarkEmailRead
 import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.Security
-import androidx.compose.material.icons.rounded.Speed
-import androidx.compose.material.icons.rounded.Visibility
-import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -56,6 +55,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -67,6 +67,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -76,27 +77,41 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
+import coil.compose.AsyncImage
 import com.example.R
+import com.example.data.model.AppSettings
+import com.example.data.model.ThemeMode
 import com.example.ui.components.GlassCard
 import com.example.ui.components.HKPayBackdrop
 import com.example.ui.components.HKPayPrimaryButton
+import com.example.ui.components.ThemeCycleIconButton
+import com.example.ui.theme.HKPayIcons
 import com.example.ui.theme.LocalHKPayColors
 import com.example.ui.viewmodel.AuthUiState
+import com.example.util.FormatUtils
+import java.io.File
+
+private val LIVENESS_CHALLENGES = listOf(
+    "Look directly into the camera and smile naturally",
+    "Hold camera at eye level and tilt slightly left",
+    "Look straight ahead with eyes wide open in bright light"
+)
 
 @Composable
 fun SplashScreen() {
     val extra = LocalHKPayColors.current
     var started by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (started) 1f else 0.78f,
-        animationSpec = tween(durationMillis = 700, easing = FastOutSlowInEasing),
+        targetValue = if (started) 1f else 0.88f,
+        animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
         label = "splash_logo_scale"
     )
     val pulse by rememberInfiniteTransition(label = "glow_pulse").animateFloat(
-        initialValue = 0.55f,
+        initialValue = 0.65f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1100),
+            animation = tween(800),
             repeatMode = RepeatMode.Reverse
         ),
         label = "pulse_alpha"
@@ -116,7 +131,7 @@ fun SplashScreen() {
             Box(contentAlignment = Alignment.Center) {
                 Box(
                     modifier = Modifier
-                        .size(185.dp)
+                        .size(180.dp)
                         .clip(CircleShape)
                         .background(
                             Brush.radialGradient(
@@ -132,12 +147,12 @@ fun SplashScreen() {
                     contentDescription = "HK PAY Brand Logo",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
-                        .size(136.dp)
+                        .size(132.dp)
                         .scale(scale)
                         .clip(RoundedCornerShape(30.dp))
                 )
             }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(22.dp))
             Text(
                 text = "HK PAY",
                 style = MaterialTheme.typography.displaySmall,
@@ -149,9 +164,9 @@ fun SplashScreen() {
                 style = MaterialTheme.typography.labelMedium,
                 color = extra.cyanGlow
             )
-            Spacer(Modifier.height(36.dp))
+            Spacer(Modifier.height(30.dp))
             CircularProgressIndicator(
-                modifier = Modifier.size(28.dp),
+                modifier = Modifier.size(26.dp),
                 strokeWidth = 2.6.dp,
                 color = extra.cyanGlow
             )
@@ -161,6 +176,8 @@ fun SplashScreen() {
 
 @Composable
 fun WelcomeScreen(
+    themeMode: ThemeMode,
+    onToggleTheme: () -> Unit,
     onSignInClick: () -> Unit,
     onSignUpClick: () -> Unit
 ) {
@@ -171,7 +188,7 @@ fun WelcomeScreen(
                 .fillMaxSize()
                 .safeDrawingPadding()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 28.dp),
+                .padding(horizontal = 24.dp, vertical = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Box(
@@ -179,51 +196,68 @@ fun WelcomeScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Spacer(Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "HK PAY",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = extra.cyanGlow
+                        )
+                        ThemeCycleIconButton(
+                            themeMode = themeMode,
+                            onToggleTheme = onToggleTheme
+                        )
+                    }
+                    Spacer(Modifier.height(14.dp))
                     Image(
                         painter = painterResource(id = R.drawable.hk_pay_logo),
                         contentDescription = "HK PAY Logo",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
-                            .size(116.dp)
+                            .size(110.dp)
                             .clip(RoundedCornerShape(26.dp))
                     )
                     Spacer(Modifier.height(20.dp))
                     Text(
                         text = "Global Physical Cards,\nDelivered to Your Door",
                         style = MaterialTheme.typography.displaySmall,
+                        color = MaterialTheme.colorScheme.onBackground,
                         textAlign = TextAlign.Center
                     )
                     Spacer(Modifier.height(10.dp))
                     Text(
-                        text = "Order verified international payment cards with real-time tracking, transparent USD-to-BDT rates, and bank-grade KYC protection.",
+                        text = "Order verified international payment cards with real-time tracking, transparent USD-to-BDT rates, and NID + Liveness security.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
-                    Spacer(Modifier.height(28.dp))
+                    Spacer(Modifier.height(26.dp))
 
                     GlassCard {
                         WelcomeFeatureRow(
-                            icon = Icons.Rounded.CreditCard,
+                            icon = HKPayIcons.CreditCard,
                             title = "Physical Card Issuance",
                             subtitle = "Browse live packages and order physical cards with courier tracking."
                         )
                         Spacer(Modifier.height(14.dp))
                         WelcomeFeatureRow(
-                            icon = Icons.Rounded.Security,
-                            title = "Zero-Trust Security",
-                            subtitle = "Verified KYC, backend-controlled payments, and Firebase App Check."
+                            icon = HKPayIcons.Security,
+                            title = "NID & Live Liveness Security",
+                            subtitle = "Email link check, NID verification, and instant live selfie capture."
                         )
                         Spacer(Modifier.height(14.dp))
                         WelcomeFeatureRow(
-                            icon = Icons.Rounded.Speed,
-                            title = "Live Currency Rates",
-                            subtitle = "Instant USD, EUR, and GBP rate updates synced directly from Firebase."
+                            icon = HKPayIcons.Speed,
+                            title = "Fast Cloud Sync & Controls",
+                            subtitle = "Instant sign-in, linked card balance view, and live FX rates."
                         )
                     }
 
-                    Spacer(Modifier.height(28.dp))
+                    Spacer(Modifier.height(26.dp))
                     HKPayPrimaryButton(
                         text = "Sign In to HK PAY",
                         onClick = onSignInClick,
@@ -275,7 +309,11 @@ private fun WelcomeFeatureRow(
         }
         Spacer(Modifier.width(12.dp))
         Column {
-            Text(text = title, style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
@@ -288,6 +326,8 @@ private fun WelcomeFeatureRow(
 @Composable
 fun SignInScreen(
     uiState: AuthUiState,
+    themeMode: ThemeMode,
+    onToggleTheme: () -> Unit,
     onSignIn: (String, String) -> Unit,
     onForgotPassword: () -> Unit,
     onNavigateSignUp: () -> Unit,
@@ -308,11 +348,22 @@ fun SignInScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Column(modifier = Modifier.widthIn(max = 520.dp)) {
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier.testTag("signin_back_button")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.testTag("signin_back_button")
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "Back",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                    ThemeCycleIconButton(themeMode = themeMode, onToggleTheme = onToggleTheme)
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -326,7 +377,11 @@ fun SignInScreen(
                     )
                     Spacer(Modifier.width(14.dp))
                     Column {
-                        Text(text = "Welcome Back", style = MaterialTheme.typography.headlineMedium)
+                        Text(
+                            text = "Welcome Back",
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
                         Text(
                             text = "Sign in to manage your HK PAY cards",
                             style = MaterialTheme.typography.bodyMedium,
@@ -366,7 +421,7 @@ fun SignInScreen(
                                 modifier = Modifier.testTag("signin_toggle_password")
                             ) {
                                 Icon(
-                                    imageVector = if (passwordVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                    imageVector = if (passwordVisible) HKPayIcons.VisibilityOff else HKPayIcons.Visibility,
                                     contentDescription = if (passwordVisible) "Hide password" else "Show password"
                                 )
                             }
@@ -428,16 +483,71 @@ fun SignInScreen(
 @Composable
 fun SignUpScreen(
     uiState: AuthUiState,
-    onSignUp: (String, String, String, String, String) -> Unit,
+    publicConfig: AppSettings,
+    themeMode: ThemeMode,
+    onToggleTheme: () -> Unit,
+    onSignUp: (
+        fullName: String,
+        email: String,
+        phone: String,
+        password: String,
+        confirmPassword: String,
+        nidNumber: String,
+        nidFrontUri: Uri?,
+        nidBackUri: Uri?,
+        livenessUri: Uri?,
+        livenessChallenge: String,
+        referralCode: String
+    ) -> Unit,
     onNavigateSignIn: () -> Unit,
     onBack: () -> Unit
 ) {
+    val extra = LocalHKPayColors.current
+    val context = LocalContext.current
+
+    var currentStep by remember { mutableIntStateOf(1) }
     var fullName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var referralCode by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
+
+    var nidNumber by remember { mutableStateOf("") }
+    var nidFrontUri by remember { mutableStateOf<Uri?>(null) }
+    var nidBackUri by remember { mutableStateOf<Uri?>(null) }
+    var livenessUri by remember { mutableStateOf<Uri?>(null) }
+    var challengeIdx by remember { mutableIntStateOf(0) }
+    var pendingCaptureUri by remember { mutableStateOf<Uri?>(null) }
+    var stepError by remember { mutableStateOf<String?>(null) }
+
+    val activeChallenge = LIVENESS_CHALLENGES[challengeIdx % LIVENESS_CHALLENGES.size]
+
+    val nidFrontPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) nidFrontUri = uri
+    }
+    val nidBackPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) nidBackUri = uri
+    }
+    val livenessCameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
+        if (saved && pendingCaptureUri != null) {
+            livenessUri = pendingCaptureUri
+            stepError = null
+        }
+    }
+
+    fun launchLivenessCamera() {
+        val dir = File(context.cacheDir, "liveness").apply { mkdirs() }
+        val file = File(dir, "selfie_${System.currentTimeMillis()}.jpg")
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+        pendingCaptureUri = uri
+        livenessCameraLauncher.launch(uri)
+    }
 
     HKPayBackdrop {
         Column(
@@ -449,132 +559,376 @@ fun SignUpScreen(
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(modifier = Modifier.widthIn(max = 520.dp)) {
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier.testTag("signup_back_button")
+            Column(modifier = Modifier.widthIn(max = 540.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                    IconButton(
+                        onClick = {
+                            if (currentStep == 2) currentStep = 1 else onBack()
+                        },
+                        modifier = Modifier.testTag("signup_back_button")
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "Back",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                    ThemeCycleIconButton(themeMode = themeMode, onToggleTheme = onToggleTheme)
                 }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Image(
                         painter = painterResource(id = R.drawable.hk_pay_logo),
                         contentDescription = "HK PAY Logo",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
-                            .size(56.dp)
+                            .size(54.dp)
                             .clip(RoundedCornerShape(14.dp))
                     )
                     Spacer(Modifier.width(14.dp))
                     Column {
-                        Text(text = "Create Account", style = MaterialTheme.typography.headlineMedium)
                         Text(
-                            text = "Start ordering HK PAY physical cards",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = "Create HK PAY Account",
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = if (currentStep == 1) {
+                                "Step 1 of 2 • Account, Email & Phone (No OTP)"
+                            } else {
+                                "Step 2 of 2 • NID Photos & Live Liveness Check"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = extra.cyanGlow
                         )
                     }
                 }
 
-                Spacer(Modifier.height(20.dp))
-                AuthFeedbackBanner(uiState.errorMessage, uiState.infoMessage)
+                Spacer(Modifier.height(12.dp))
+                LinearProgressIndicator(
+                    progress = { if (currentStep == 1) 0.5f else 1f },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(50)),
+                    color = extra.cyanGlow,
+                    trackColor = MaterialTheme.colorScheme.outlineVariant
+                )
 
-                GlassCard {
-                    OutlinedTextField(
-                        value = fullName,
-                        onValueChange = { fullName = it },
-                        label = { Text("Full Name") },
-                        leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                Spacer(Modifier.height(16.dp))
+
+                if (!publicConfig.registrationEnabled) {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = extra.warning.copy(alpha = 0.14f),
+                        border = BorderStroke(1.dp, extra.warning.copy(alpha = 0.5f)),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .testTag("signup_fullname_input"),
-                        shape = RoundedCornerShape(14.dp)
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = email,
-                        onValueChange = { email = it },
-                        label = { Text("Email Address") },
-                        leadingIcon = { Icon(Icons.Rounded.Email, contentDescription = null) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Email,
-                            imeAction = ImeAction.Next
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("signup_email_input"),
-                        shape = RoundedCornerShape(14.dp)
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = { Text("Password") },
-                        leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
-                        trailingIcon = {
-                            IconButton(
-                                onClick = { showPassword = !showPassword },
-                                modifier = Modifier.testTag("signup_toggle_password")
-                            ) {
-                                Icon(
-                                    imageVector = if (showPassword) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                                    contentDescription = if (showPassword) "Hide password" else "Show password"
+                            .padding(bottom = 14.dp)
+                    ) {
+                        Text(
+                            text = "Registrations are temporarily paused by administrator. Please check back later.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = extra.warning,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                }
+
+                AuthFeedbackBanner(stepError ?: uiState.errorMessage, uiState.infoMessage)
+
+                if (currentStep == 1) {
+                    GlassCard {
+                        OutlinedTextField(
+                            value = fullName,
+                            onValueChange = { fullName = it },
+                            label = { Text("Full Legal Name (as on NID)") },
+                            leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("signup_fullname_input"),
+                            shape = RoundedCornerShape(14.dp)
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = email,
+                            onValueChange = { email = it },
+                            label = { Text("Email Address (Verification Link)") },
+                            leadingIcon = { Icon(Icons.Rounded.Email, contentDescription = null) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Email,
+                                imeAction = ImeAction.Next
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("signup_email_input"),
+                            shape = RoundedCornerShape(14.dp)
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = phone,
+                            onValueChange = { phone = it },
+                            label = { Text("Phone Number (No SMS OTP Needed)") },
+                            placeholder = { Text("+880 1XXX-XXXXXX") },
+                            leadingIcon = { Icon(HKPayIcons.Phone, contentDescription = null) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Phone,
+                                imeAction = ImeAction.Next
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("signup_phone_input"),
+                            shape = RoundedCornerShape(14.dp)
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = password,
+                            onValueChange = { password = it },
+                            label = { Text("Password") },
+                            leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
+                            trailingIcon = {
+                                IconButton(
+                                    onClick = { showPassword = !showPassword },
+                                    modifier = Modifier.testTag("signup_toggle_password")
+                                ) {
+                                    Icon(
+                                        imageVector = if (showPassword) HKPayIcons.VisibilityOff else HKPayIcons.Visibility,
+                                        contentDescription = if (showPassword) "Hide password" else "Show password"
+                                    )
+                                }
+                            },
+                            visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Password,
+                                imeAction = ImeAction.Next
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("signup_password_input"),
+                            shape = RoundedCornerShape(14.dp)
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = confirmPassword,
+                            onValueChange = { confirmPassword = it },
+                            label = { Text("Confirm Password") },
+                            leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
+                            visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Password,
+                                imeAction = ImeAction.Next
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("signup_confirm_password_input"),
+                            shape = RoundedCornerShape(14.dp)
+                        )
+
+                        if (publicConfig.referralProgramEnabled) {
+                            Spacer(Modifier.height(12.dp))
+                            OutlinedTextField(
+                                value = referralCode,
+                                onValueChange = { referralCode = it.uppercase() },
+                                label = { Text("Referral Code (Optional)") },
+                                placeholder = {
+                                    Text(
+                                        "e.g. HKR123456 — ${FormatUtils.formatMoney(publicConfig.referralBonusAmount, "USD")} bonus"
+                                    )
+                                },
+                                leadingIcon = { Icon(HKPayIcons.CardGiftcard, contentDescription = null) },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("signup_referral_input"),
+                                shape = RoundedCornerShape(14.dp)
+                            )
+                        }
+
+                        Spacer(Modifier.height(18.dp))
+                        HKPayPrimaryButton(
+                            text = "Continue to NID & Liveness",
+                            enabled = publicConfig.registrationEnabled,
+                            onClick = {
+                                val digits = phone.filter { it.isDigit() }
+                                when {
+                                    fullName.trim().length < 2 -> stepError = "Enter your full legal name."
+                                    !FormatUtils.isValidEmail(email) -> stepError = "Enter a valid email address."
+                                    digits.length < 8 -> stepError = "Enter a valid phone number."
+                                    password.length < 6 -> stepError = "Password must be at least 6 characters."
+                                    password != confirmPassword -> stepError = "Passwords do not match."
+                                    else -> {
+                                        stepError = null
+                                        currentStep = 2
+                                    }
+                                }
+                            },
+                            testTag = "signup_next_step_button"
+                        )
+                    }
+                } else {
+                    GlassCard {
+                        Text(
+                            text = "National ID (NID) Verification",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Enter your NID number, attach front & back images, and take a live selfie matching the prompt.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(12.dp))
+
+                        OutlinedTextField(
+                            value = nidNumber,
+                            onValueChange = { nidNumber = it },
+                            label = { Text("NID Number") },
+                            leadingIcon = { Icon(HKPayIcons.Badge, contentDescription = null) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("signup_nid_number_input"),
+                            shape = RoundedCornerShape(14.dp)
+                        )
+                        Spacer(Modifier.height(12.dp))
+
+                        SignUpMediaTile(
+                            label = "NID Front Photo",
+                            selectedUri = nidFrontUri,
+                            icon = HKPayIcons.UploadFile,
+                            buttonLabel = if (nidFrontUri != null) "NID Front Selected (Change)" else "Select NID Front Photo",
+                            onClick = {
+                                nidFrontPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            },
+                            testTag = "signup_nid_front_button"
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        SignUpMediaTile(
+                            label = "NID Back Photo",
+                            selectedUri = nidBackUri,
+                            icon = HKPayIcons.UploadFile,
+                            buttonLabel = if (nidBackUri != null) "NID Back Selected (Change)" else "Select NID Back Photo",
+                            onClick = {
+                                nidBackPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            },
+                            testTag = "signup_nid_back_button"
+                        )
+
+                        Spacer(Modifier.height(14.dp))
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = extra.electricBlue.copy(alpha = 0.12f),
+                            border = BorderStroke(1.dp, extra.cyanGlow.copy(alpha = 0.45f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = HKPayIcons.FaceCheck,
+                                            contentDescription = "Liveness prompt",
+                                            tint = extra.cyanGlow,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(
+                                            text = "Live Camera Liveness Prompt",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = extra.cyanGlow
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { challengeIdx++ },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = HKPayIcons.Refresh,
+                                            contentDescription = "New liveness challenge",
+                                            tint = extra.cyanGlow,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = activeChallenge,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
-                        },
-                        visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Password,
-                            imeAction = ImeAction.Next
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("signup_password_input"),
-                        shape = RoundedCornerShape(14.dp)
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = confirmPassword,
-                        onValueChange = { confirmPassword = it },
-                        label = { Text("Confirm Password") },
-                        leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
-                        visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Password,
-                            imeAction = ImeAction.Next
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("signup_confirm_password_input"),
-                        shape = RoundedCornerShape(14.dp)
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = referralCode,
-                        onValueChange = { referralCode = it.uppercase() },
-                        label = { Text("Referral Code (Optional)") },
-                        placeholder = { Text("e.g. HKR123456 — $5.00 fee credit") },
-                        leadingIcon = { Icon(Icons.Rounded.CardGiftcard, contentDescription = null) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("signup_referral_input"),
-                        shape = RoundedCornerShape(14.dp)
-                    )
-                    Spacer(Modifier.height(18.dp))
-                    HKPayPrimaryButton(
-                        text = "Create Account",
-                        onClick = { onSignUp(fullName, email, password, confirmPassword, referralCode) },
-                        isLoading = uiState.isLoading,
-                        testTag = "signup_submit_button"
-                    )
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        SignUpMediaTile(
+                            label = "Live Selfie Liveness",
+                            selectedUri = livenessUri,
+                            icon = HKPayIcons.CameraAlt,
+                            buttonLabel = if (livenessUri != null) "Live Selfie Captured (Retake)" else "Take Live Selfie (Camera)",
+                            onClick = ::launchLivenessCamera,
+                            testTag = "signup_liveness_capture_button"
+                        )
+
+                        Spacer(Modifier.height(18.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    stepError = null
+                                    currentStep = 1
+                                },
+                                modifier = Modifier
+                                    .weight(0.8f)
+                                    .height(52.dp)
+                                    .testTag("signup_step_back_button"),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Text("Back")
+                            }
+                            Box(modifier = Modifier.weight(1.4f)) {
+                                HKPayPrimaryButton(
+                                    text = "Create Account",
+                                    enabled = publicConfig.registrationEnabled,
+                                    isLoading = uiState.isLoading,
+                                    onClick = {
+                                        stepError = null
+                                        onSignUp(
+                                            fullName,
+                                            email,
+                                            phone,
+                                            password,
+                                            confirmPassword,
+                                            nidNumber,
+                                            nidFrontUri,
+                                            nidBackUri,
+                                            livenessUri,
+                                            activeChallenge,
+                                            referralCode
+                                        )
+                                    },
+                                    testTag = "signup_submit_button"
+                                )
+                            }
+                        }
+                    }
                 }
 
                 Spacer(Modifier.height(16.dp))
@@ -601,8 +955,50 @@ fun SignUpScreen(
 }
 
 @Composable
+private fun SignUpMediaTile(
+    label: String,
+    selectedUri: Uri?,
+    icon: ImageVector,
+    buttonLabel: String,
+    onClick: () -> Unit,
+    testTag: String
+) {
+    Column {
+        OutlinedButton(
+            onClick = onClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .testTag(testTag),
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            Icon(
+                imageVector = if (selectedUri != null) Icons.Rounded.CheckCircle else icon,
+                contentDescription = label
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(buttonLabel)
+        }
+        if (selectedUri != null) {
+            Spacer(Modifier.height(8.dp))
+            AsyncImage(
+                model = selectedUri,
+                contentDescription = label,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(118.dp)
+                    .clip(RoundedCornerShape(12.dp))
+            )
+        }
+    }
+}
+
+@Composable
 fun ForgotPasswordScreen(
     uiState: AuthUiState,
+    themeMode: ThemeMode,
+    onToggleTheme: () -> Unit,
     onSendReset: (String) -> Unit,
     onBack: () -> Unit
 ) {
@@ -619,14 +1015,29 @@ fun ForgotPasswordScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Column(modifier = Modifier.widthIn(max = 520.dp)) {
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier.testTag("forgot_back_button")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.testTag("forgot_back_button")
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "Back",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                    ThemeCycleIconButton(themeMode = themeMode, onToggleTheme = onToggleTheme)
                 }
                 Spacer(Modifier.height(12.dp))
-                Text(text = "Reset Password", style = MaterialTheme.typography.headlineMedium)
+                Text(
+                    text = "Reset Password",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
                 Spacer(Modifier.height(6.dp))
                 Text(
                     text = "Enter your registered email address and Firebase will send a secure password reset link.",
@@ -669,11 +1080,15 @@ fun ForgotPasswordScreen(
 fun EmailVerificationScreen(
     email: String,
     uiState: AuthUiState,
+    themeMode: ThemeMode,
+    onToggleTheme: () -> Unit,
     onResend: () -> Unit,
     onCheckVerified: () -> Unit,
     onSignOut: () -> Unit
 ) {
     val extra = LocalHKPayColors.current
+    val context = LocalContext.current
+
     HKPayBackdrop {
         Column(
             modifier = Modifier
@@ -681,9 +1096,17 @@ fun EmailVerificationScreen(
                 .safeDrawingPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            Row(
+                modifier = Modifier
+                    .widthIn(max = 500.dp)
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                ThemeCycleIconButton(themeMode = themeMode, onToggleTheme = onToggleTheme)
+            }
+            Spacer(Modifier.height(24.dp))
             Column(
                 modifier = Modifier.widthIn(max = 500.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -696,7 +1119,7 @@ fun EmailVerificationScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.MarkEmailRead,
+                        imageVector = HKPayIcons.MarkEmailRead,
                         contentDescription = "Verify email",
                         tint = extra.cyanGlow,
                         modifier = Modifier.size(42.dp)
@@ -706,11 +1129,12 @@ fun EmailVerificationScreen(
                 Text(
                     text = "Verify Your Email",
                     style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
                     textAlign = TextAlign.Center
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "We sent a verification link to:\n$email",
+                    text = "We sent a secure verification link to:\n$email",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
@@ -727,6 +1151,27 @@ fun EmailVerificationScreen(
                     )
                     Spacer(Modifier.height(12.dp))
                     OutlinedButton(
+                        onClick = {
+                            runCatching {
+                                val intent = Intent(Intent.ACTION_MAIN).apply {
+                                    addCategory(Intent.CATEGORY_APP_EMAIL)
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                }
+                                context.startActivity(Intent.createChooser(intent, "Open Email App"))
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("verify_open_email_app_button"),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(HKPayIcons.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Open Email Inbox")
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(
                         onClick = onResend,
                         enabled = !uiState.isLoading && uiState.resendCooldownSeconds == 0,
                         modifier = Modifier
@@ -736,9 +1181,9 @@ fun EmailVerificationScreen(
                         shape = RoundedCornerShape(14.dp)
                     ) {
                         val label = if (uiState.resendCooldownSeconds > 0) {
-                            "Resend Email (${uiState.resendCooldownSeconds}s)"
+                            "Resend Link (${uiState.resendCooldownSeconds}s)"
                         } else {
-                            "Resend Verification Email"
+                            "Resend Verification Link"
                         }
                         Text(label)
                     }
@@ -842,7 +1287,7 @@ fun BiometricLockScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.Fingerprint,
+                        imageVector = HKPayIcons.Fingerprint,
                         contentDescription = "Biometric unlock",
                         tint = extra.cyanGlow,
                         modifier = Modifier.size(40.dp)
@@ -852,6 +1297,7 @@ fun BiometricLockScreen(
                 Text(
                     text = "Unlock HK PAY",
                     style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
                     textAlign = TextAlign.Center
                 )
                 Spacer(Modifier.height(6.dp))
@@ -868,7 +1314,7 @@ fun BiometricLockScreen(
                     HKPayPrimaryButton(
                         text = "Unlock with Biometrics",
                         onClick = onPromptBiometric,
-                        icon = Icons.Rounded.Fingerprint,
+                        icon = HKPayIcons.Fingerprint,
                         testTag = "biometric_unlock_button"
                     )
                     Spacer(Modifier.height(12.dp))
@@ -887,4 +1333,3 @@ fun BiometricLockScreen(
         }
     }
 }
-

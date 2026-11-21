@@ -18,15 +18,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.OpenInNew
-import androidx.compose.material.icons.rounded.ContentCopy
-import androidx.compose.material.icons.rounded.CreditCard
-import androidx.compose.material.icons.rounded.Visibility
-import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -44,11 +37,15 @@ import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import com.example.R
 import com.example.data.model.IssuedCard
+import com.example.data.model.ThemeMode
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.GlassCard
 import com.example.ui.components.HKPayPhysicalCardVisual
 import com.example.ui.components.SecurityNoticeBanner
 import com.example.ui.components.StatusBadge
+import com.example.ui.components.ThemeCycleIconButton
+import com.example.ui.components.TransactionActivityCard
+import com.example.ui.theme.HKPayIcons
 import com.example.ui.theme.JetBrainsMonoFontFamily
 import com.example.ui.theme.LocalHKPayColors
 import com.example.ui.viewmodel.MainDashboardState
@@ -58,7 +55,10 @@ import com.example.util.FormatUtils
 @Composable
 fun MyCardsScreen(
     state: MainDashboardState,
+    themeMode: ThemeMode,
+    balanceVisible: Boolean,
     biometricEnabled: Boolean,
+    onToggleTheme: () -> Unit,
     onRevealToggle: (IssuedCard) -> Unit,
     onNavigateStore: () -> Unit,
     onCopied: (String) -> Unit
@@ -80,7 +80,21 @@ fun MyCardsScreen(
         ) {
             item {
                 Column {
-                    Text(text = "My Physical Cards", style = MaterialTheme.typography.headlineMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "My Physical Cards",
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        ThemeCycleIconButton(
+                            themeMode = themeMode,
+                            onToggleTheme = onToggleTheme
+                        )
+                    }
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text = "Issued cards synchronized from authorized card issuer backend.",
@@ -95,7 +109,7 @@ fun MyCardsScreen(
             if (state.issuedCards.isEmpty()) {
                 item {
                     EmptyStateCard(
-                        icon = Icons.Rounded.CreditCard,
+                        icon = HKPayIcons.CreditCard,
                         title = "No Issued Physical Cards",
                         subtitle = "Once your card order is verified, KYC approved, and issued by the provider, your physical card will appear here.",
                         actionLabel = "Order a Physical Card",
@@ -131,7 +145,7 @@ fun MyCardsScreen(
                         ) {
                             Column {
                                 Text("Issuing Provider", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(card.issuingProvider, style = MaterialTheme.typography.titleSmall)
+                                Text(card.issuingProvider, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
                             }
                             StatusBadge(status = card.activationStatus)
                         }
@@ -148,10 +162,11 @@ fun MyCardsScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("Card Balance", style = MaterialTheme.typography.labelLarge)
+                                    Text("Card Balance", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
                                     Text(
-                                        text = FormatUtils.formatMoney(card.balance, card.balanceCurrency),
+                                        text = if (balanceVisible) FormatUtils.formatMoney(card.balance, card.balanceCurrency) else "••••••",
                                         style = MaterialTheme.typography.titleLarge,
+                                        fontFamily = JetBrainsMonoFontFamily,
                                         color = extra.cyanGlow
                                     )
                                 }
@@ -192,7 +207,7 @@ fun MyCardsScreen(
                                             CircularProgressIndicator(modifier = Modifier.height(18.dp), strokeWidth = 2.dp)
                                         } else {
                                             Icon(
-                                                imageVector = if (revealed != null) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                                imageVector = if (revealed != null) HKPayIcons.VisibilityOff else HKPayIcons.Visibility,
                                                 contentDescription = null
                                             )
                                             Spacer(Modifier.width(6.dp))
@@ -208,7 +223,7 @@ fun MyCardsScreen(
                                             modifier = Modifier.height(48.dp),
                                             shape = RoundedCornerShape(12.dp)
                                         ) {
-                                            Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy card number")
+                                            Icon(HKPayIcons.ContentCopy, contentDescription = "Copy card number")
                                             Spacer(Modifier.width(6.dp))
                                             Text("Copy")
                                         }
@@ -248,7 +263,7 @@ fun MyCardsScreen(
                                     modifier = Modifier.fillMaxWidth().height(48.dp),
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
-                                    Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null)
+                                    Icon(HKPayIcons.OpenInNew, contentDescription = null)
                                     Spacer(Modifier.width(8.dp))
                                     Text("Open Provider Hosted Card View")
                                 }
@@ -271,33 +286,14 @@ fun MyCardsScreen(
             }
             if (cardTxs.isNotEmpty()) {
                 item {
-                    Text(text = "Card Transactions", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = "Card Transactions",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
                 }
                 items(cardTxs.take(10), key = { it.txId }) { tx ->
-                    GlassCard(contentPadding = PaddingValues(14.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(tx.txType, style = MaterialTheme.typography.titleSmall)
-                                Text(
-                                    text = "${tx.txId} • ${FormatUtils.formatDateTime(tx.createdAt)}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    text = FormatUtils.formatMoney(tx.amount, tx.currency),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = extra.cyanGlow
-                                )
-                                StatusBadge(status = tx.status)
-                            }
-                        }
-                    }
+                    TransactionActivityCard(tx = tx)
                 }
             }
         }

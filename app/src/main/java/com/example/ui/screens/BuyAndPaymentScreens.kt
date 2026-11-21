@@ -9,7 +9,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,12 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.OpenInNew
-import androidx.compose.material.icons.rounded.AccountBalance
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.ContentCopy
-import androidx.compose.material.icons.rounded.Payment
-import androidx.compose.material.icons.rounded.UploadFile
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -65,6 +59,7 @@ import com.example.R
 import com.example.data.model.CardOrder
 import com.example.data.model.CardPackage
 import com.example.data.model.PaymentMethodConfig
+import com.example.data.model.ThemeMode
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.GlassCard
 import com.example.ui.components.HKPayPhysicalCardVisual
@@ -72,6 +67,7 @@ import com.example.ui.components.HKPayPrimaryButton
 import com.example.ui.components.HKPayTopBar
 import com.example.ui.components.SecurityNoticeBanner
 import com.example.ui.components.StatusBadge
+import com.example.ui.theme.HKPayIcons
 import com.example.ui.theme.LocalHKPayColors
 import com.example.ui.viewmodel.MainDashboardState
 import com.example.util.BiometricHelper
@@ -82,7 +78,9 @@ fun BuyCardScreen(
     cardPackage: CardPackage?,
     selectedDesign: String = "",
     state: MainDashboardState,
+    themeMode: ThemeMode,
     biometricEnabled: Boolean,
+    onToggleTheme: () -> Unit,
     onBack: () -> Unit,
     onConfirmOrder: (
         pkg: CardPackage,
@@ -100,6 +98,7 @@ fun BuyCardScreen(
 ) {
     val extra = LocalHKPayColors.current
     val context = LocalContext.current
+    val profile = state.userProfile
     val designObj = remember(selectedDesign) {
         HKPayCardDesigns.firstOrNull { it.name.equals(selectedDesign, ignoreCase = true) }
     }
@@ -107,19 +106,28 @@ fun BuyCardScreen(
         mutableStateOf(state.availableReferralCredit > 0.0)
     }
 
-    var customerName by remember(state.userProfile.fullName) { mutableStateOf(state.userProfile.fullName) }
-    var phoneNumber by remember(state.userProfile.phone) { mutableStateOf(state.userProfile.phone) }
-    var country by remember(state.userProfile.country) { mutableStateOf(state.userProfile.country.ifBlank { "Bangladesh" }) }
-    var district by remember { mutableStateOf("") }
-    var cityUpazila by remember { mutableStateOf("") }
-    var address by remember { mutableStateOf("") }
-    var postalCode by remember { mutableStateOf("") }
+    var customerName by remember(profile.fullName) { mutableStateOf(profile.fullName) }
+    var phoneNumber by remember(profile.phone) { mutableStateOf(profile.phone) }
+    var country by remember(profile.country) { mutableStateOf(profile.country.ifBlank { "Bangladesh" }) }
+    var district by remember(profile.district) { mutableStateOf(profile.district) }
+    var cityUpazila by remember(profile.cityUpazila) { mutableStateOf(profile.cityUpazila) }
+    var address by remember(profile.streetAddress) { mutableStateOf(profile.streetAddress) }
+    var postalCode by remember(profile.postalCode) { mutableStateOf(profile.postalCode) }
     var orderNotes by remember { mutableStateOf("") }
     var validationError by remember { mutableStateOf<String?>(null) }
 
+    val orderingAllowed = state.appSettings.cardOrderingEnabled
+
     Scaffold(
-        containerColor = androidx.compose.ui.graphics.Color.Transparent,
-        topBar = { HKPayTopBar(title = "Buy Physical Card", onBack = onBack) }
+        containerColor = Color.Transparent,
+        topBar = {
+            HKPayTopBar(
+                title = "Buy Physical Card",
+                onBack = onBack,
+                themeMode = themeMode,
+                onToggleTheme = onToggleTheme
+            )
+        }
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -130,7 +138,7 @@ fun BuyCardScreen(
             if (cardPackage == null) {
                 Box(modifier = Modifier.padding(16.dp)) {
                     EmptyStateCard(
-                        icon = Icons.Rounded.Payment,
+                        icon = HKPayIcons.Payment,
                         title = "Package Unavailable",
                         subtitle = "The selected card package could not be loaded.",
                         actionLabel = "Back to Store",
@@ -147,6 +155,21 @@ fun BuyCardScreen(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
+                    if (!orderingAllowed) {
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = extra.warning.copy(alpha = 0.14f),
+                            border = BorderStroke(1.dp, extra.warning.copy(alpha = 0.5f))
+                        ) {
+                            Text(
+                                text = "Card ordering is currently paused by administrator.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = extra.warning,
+                                modifier = Modifier.fillMaxWidth().padding(12.dp)
+                            )
+                        }
+                    }
+
                     HKPayPhysicalCardVisual(
                         cardName = buildString {
                             append(cardPackage.name)
@@ -169,7 +192,7 @@ fun BuyCardScreen(
                     val finalTotal = (cardPackage.computedTotal - appliedDiscount).coerceAtLeast(0.0)
 
                     GlassCard {
-                        Text(text = "Price Breakdown", style = MaterialTheme.typography.titleMedium)
+                        Text(text = "Price Breakdown", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                         Spacer(Modifier.height(10.dp))
                         PriceLine("Card Package", cardPackage.name)
                         if (selectedDesign.isNotBlank()) {
@@ -214,7 +237,12 @@ fun BuyCardScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Final Total", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(
+                                "Final Total",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
                             Text(
                                 text = FormatUtils.formatMoney(finalTotal, cardPackage.currency),
                                 style = MaterialTheme.typography.titleLarge,
@@ -224,7 +252,7 @@ fun BuyCardScreen(
                     }
 
                     GlassCard {
-                        Text(text = "Delivery & Recipient Details", style = MaterialTheme.typography.titleMedium)
+                        Text(text = "Delivery & Recipient Details", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                         Spacer(Modifier.height(12.dp))
 
                         if (!validationError.isNullOrBlank()) {
@@ -330,7 +358,8 @@ fun BuyCardScreen(
                         }
                         Spacer(Modifier.height(12.dp))
                         HKPayPrimaryButton(
-                            text = "Confirm Order & Proceed to Payment",
+                            text = if (orderingAllowed) "Confirm Order & Proceed to Payment" else "Ordering Paused",
+                            enabled = orderingAllowed,
                             onClick = {
                                 when {
                                     customerName.isBlank() -> validationError = "Customer name is required."
@@ -387,7 +416,9 @@ fun BuyCardScreen(
 fun PaymentScreen(
     order: CardOrder?,
     state: MainDashboardState,
+    themeMode: ThemeMode,
     biometricEnabled: Boolean,
+    onToggleTheme: () -> Unit,
     onBack: () -> Unit,
     onSubmitPayment: (
         order: CardOrder,
@@ -430,8 +461,15 @@ fun PaymentScreen(
     ) { uri -> if (uri != null) proofUri = uri }
 
     Scaffold(
-        containerColor = androidx.compose.ui.graphics.Color.Transparent,
-        topBar = { HKPayTopBar(title = "Complete Payment", onBack = onBack) }
+        containerColor = Color.Transparent,
+        topBar = {
+            HKPayTopBar(
+                title = "Complete Payment",
+                onBack = onBack,
+                themeMode = themeMode,
+                onToggleTheme = onToggleTheme
+            )
+        }
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -442,7 +480,7 @@ fun PaymentScreen(
             if (order == null) {
                 Box(Modifier.padding(16.dp)) {
                     EmptyStateCard(
-                        icon = Icons.Rounded.Payment,
+                        icon = HKPayIcons.Payment,
                         title = "Order Not Found",
                         subtitle = "Unable to locate this order.",
                         actionLabel = "Go Back",
@@ -468,7 +506,7 @@ fun PaymentScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column {
-                                Text(order.packageName, style = MaterialTheme.typography.titleMedium)
+                                Text(order.packageName, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                                 Text(
                                     text = "Order ${order.orderId}",
                                     style = MaterialTheme.typography.labelSmall,
@@ -486,7 +524,7 @@ fun PaymentScreen(
                     }
 
                     GlassCard {
-                        Text(text = "Select Payment Method", style = MaterialTheme.typography.titleMedium)
+                        Text(text = "Select Payment Method", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                         Spacer(Modifier.height(10.dp))
                         configuredMethods.forEach { method ->
                             val isSelected = selectedMethod?.id == method.id
@@ -510,7 +548,7 @@ fun PaymentScreen(
                                     RadioButton(selected = isSelected, onClick = { selectedMethod = method })
                                     Spacer(Modifier.width(8.dp))
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(method.name, style = MaterialTheme.typography.titleSmall)
+                                        Text(method.name, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
                                         if (method.accountNumber.isNotBlank()) {
                                             Text(
                                                 text = "${method.accountTitle.ifBlank { "Account" }}: ${method.accountNumber}",
@@ -531,7 +569,7 @@ fun PaymentScreen(
                                             clipboard.setText(AnnotatedString(method.accountNumber))
                                             onCopied("${method.name} number copied")
                                         }) {
-                                            Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy account number")
+                                            Icon(HKPayIcons.ContentCopy, contentDescription = "Copy account number")
                                         }
                                     }
                                 }
@@ -543,9 +581,9 @@ fun PaymentScreen(
                     if (activeMethod != null && activeMethod.gatewayUrl.startsWith("https://")) {
                         GlassCard {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Rounded.AccountBalance, contentDescription = null, tint = extra.cyanGlow)
+                                Icon(HKPayIcons.AccountBalance, contentDescription = null, tint = extra.cyanGlow)
                                 Spacer(Modifier.width(10.dp))
-                                Text("Provider-Approved Payment Gateway", style = MaterialTheme.typography.titleSmall)
+                                Text("Provider-Approved Payment Gateway", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
                             }
                             Spacer(Modifier.height(10.dp))
                             OutlinedButton(
@@ -557,7 +595,7 @@ fun PaymentScreen(
                                 modifier = Modifier.fillMaxWidth().height(48.dp),
                                 shape = RoundedCornerShape(14.dp)
                             ) {
-                                Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null)
+                                Icon(HKPayIcons.OpenInNew, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
                                 Text("Open Secure Checkout")
                             }
@@ -565,7 +603,7 @@ fun PaymentScreen(
                     }
 
                     GlassCard {
-                        Text(text = "Submit Payment Verification Details", style = MaterialTheme.typography.titleMedium)
+                        Text(text = "Submit Payment Verification Details", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                         Spacer(Modifier.height(10.dp))
 
                         if (!formError.isNullOrBlank()) {
@@ -609,7 +647,7 @@ fun PaymentScreen(
                             shape = RoundedCornerShape(14.dp)
                         ) {
                             Icon(
-                                imageVector = if (proofUri != null) Icons.Rounded.CheckCircle else Icons.Rounded.UploadFile,
+                                imageVector = if (proofUri != null) Icons.Rounded.CheckCircle else HKPayIcons.UploadFile,
                                 contentDescription = null
                             )
                             Spacer(Modifier.width(8.dp))

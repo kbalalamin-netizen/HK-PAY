@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,11 +18,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AddCard
-import androidx.compose.material.icons.rounded.Palette
-import androidx.compose.material.icons.rounded.Storefront
-import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -43,11 +39,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.data.model.CardPackage
+import com.example.data.model.ThemeMode
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.GlassCard
 import com.example.ui.components.HKPayPhysicalCardVisual
 import com.example.ui.components.HKPayPrimaryButton
 import com.example.ui.components.StatusBadge
+import com.example.ui.components.ThemeCycleIconButton
+import com.example.ui.theme.HKPayIcons
 import com.example.ui.theme.LocalHKPayColors
 import com.example.ui.viewmodel.MainDashboardState
 import com.example.util.FormatUtils
@@ -56,6 +55,8 @@ import com.example.util.FormatUtils
 @Composable
 fun CardStoreScreen(
     state: MainDashboardState,
+    themeMode: ThemeMode,
+    onToggleTheme: () -> Unit,
     onSelectPackage: (CardPackage) -> Unit,
     onOpenCardSelector: (String) -> Unit
 ) {
@@ -79,16 +80,42 @@ fun CardStoreScreen(
         ) {
             item {
                 Column {
-                    Text(
-                        text = "Physical Card Store",
-                        style = MaterialTheme.typography.headlineMedium
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Physical Card Store",
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        ThemeCycleIconButton(
+                            themeMode = themeMode,
+                            onToggleTheme = onToggleTheme
+                        )
+                    }
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text = "Live card packages synced from Firebase Realtime Database.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    if (!state.appSettings.cardOrderingEnabled) {
+                        Spacer(Modifier.height(10.dp))
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = extra.warning.copy(alpha = 0.14f),
+                            border = BorderStroke(1.dp, extra.warning.copy(alpha = 0.5f))
+                        ) {
+                            Text(
+                                text = "New card orders are temporarily paused by administrator.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = extra.warning,
+                                modifier = Modifier.fillMaxWidth().padding(10.dp)
+                            )
+                        }
+                    }
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         FilterChip(
@@ -111,7 +138,7 @@ fun CardStoreScreen(
                             .testTag("store_open_pager_selector_button"),
                         shape = RoundedCornerShape(14.dp)
                     ) {
-                        Icon(Icons.Rounded.Palette, contentDescription = null, tint = extra.cyanGlow)
+                        Icon(HKPayIcons.Palette, contentDescription = null, tint = extra.cyanGlow)
                         Spacer(Modifier.width(8.dp))
                         Text("Swipe & Select Card Designs (Pager)")
                     }
@@ -121,7 +148,7 @@ fun CardStoreScreen(
             if (packages.isEmpty()) {
                 item {
                     EmptyStateCard(
-                        icon = Icons.Rounded.Storefront,
+                        icon = HKPayIcons.Storefront,
                         title = "No Card Packages Published Yet",
                         subtitle = "Card packages appear here automatically when configured in Firebase Realtime Database at /card_packages."
                     )
@@ -130,6 +157,7 @@ fun CardStoreScreen(
                 items(packages, key = { it.id }) { pkg ->
                     CardPackageItem(
                         pkg = pkg,
+                        orderingEnabled = state.appSettings.cardOrderingEnabled,
                         holderName = state.userProfile.fullName,
                         onOrderClick = { onSelectPackage(pkg) }
                     )
@@ -143,6 +171,7 @@ fun CardStoreScreen(
 @Composable
 private fun CardPackageItem(
     pkg: CardPackage,
+    orderingEnabled: Boolean,
     holderName: String,
     onOrderClick: () -> Unit
 ) {
@@ -177,7 +206,11 @@ private fun CardPackageItem(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = pkg.name, style = MaterialTheme.typography.titleLarge)
+                Text(
+                    text = pkg.name,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
                 Text(
                     text = buildString {
                         append(pkg.cardType)
@@ -232,7 +265,8 @@ private fun CardPackageItem(
             Text(
                 text = "Total Price",
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
             )
             Text(
                 text = FormatUtils.formatMoney(pkg.computedTotal, pkg.currency),
@@ -243,10 +277,14 @@ private fun CardPackageItem(
 
         Spacer(Modifier.height(14.dp))
         HKPayPrimaryButton(
-            text = if (pkg.available) "Buy Physical Card" else "Currently Unavailable",
+            text = when {
+                !orderingEnabled -> "Ordering Paused by Admin"
+                pkg.available -> "Buy Physical Card"
+                else -> "Currently Unavailable"
+            },
             onClick = onOrderClick,
-            enabled = pkg.available,
-            icon = Icons.Rounded.AddCard,
+            enabled = pkg.available && orderingEnabled,
+            icon = HKPayIcons.AddCard,
             testTag = "store_order_button_${pkg.id}"
         )
     }
@@ -265,7 +303,7 @@ private fun PackageInfoPill(text: String, highlight: Boolean = false) {
         ) {
             if (highlight) {
                 Icon(
-                    imageVector = Icons.Rounded.VerifiedUser,
+                    imageVector = HKPayIcons.VerifiedUser,
                     contentDescription = null,
                     tint = extra.warning,
                     modifier = Modifier.height(14.dp)
@@ -297,6 +335,7 @@ fun PriceLine(label: String, value: String) {
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Medium
         )
     }

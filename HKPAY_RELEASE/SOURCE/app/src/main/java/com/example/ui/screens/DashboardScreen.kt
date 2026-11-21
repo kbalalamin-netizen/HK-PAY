@@ -22,23 +22,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
-import androidx.compose.material.icons.rounded.AddCard
-import androidx.compose.material.icons.rounded.CardGiftcard
-import androidx.compose.material.icons.rounded.CreditCard
-import androidx.compose.material.icons.rounded.CurrencyExchange
-import androidx.compose.material.icons.rounded.LocalShipping
 import androidx.compose.material.icons.rounded.Notifications
-import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.PlayLesson
-import androidx.compose.material.icons.rounded.SupportAgent
-import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -59,11 +50,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.R
+import com.example.data.model.ThemeMode
 import com.example.ui.components.CopyableChip
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.GlassCard
-import com.example.ui.components.HKPayPrimaryButton
+import com.example.ui.components.RecentCardActivitySection
 import com.example.ui.components.StatusBadge
+import com.example.ui.components.ThemeCycleIconButton
+import com.example.ui.theme.HKPayIcons
+import com.example.ui.theme.JetBrainsMonoFontFamily
 import com.example.ui.theme.LocalHKPayColors
 import com.example.ui.viewmodel.MainDashboardState
 import com.example.util.FormatUtils
@@ -71,7 +66,11 @@ import com.example.util.FormatUtils
 @Composable
 fun DashboardScreen(
     state: MainDashboardState,
+    themeMode: ThemeMode,
+    balanceVisible: Boolean,
     tutorialCompleted: Boolean,
+    onToggleTheme: () -> Unit,
+    onToggleBalanceVisible: () -> Unit,
     onNavigateBuyCard: () -> Unit,
     onNavigateCardSelection: () -> Unit,
     onNavigateMyCards: () -> Unit,
@@ -102,14 +101,17 @@ fun DashboardScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Top Brand & Notification Header
+            // Top Brand, Theme Switcher, Notification & Avatar Header
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Image(
                             painter = painterResource(id = R.drawable.hk_pay_logo),
                             contentDescription = "HK PAY Logo",
@@ -123,7 +125,8 @@ fun DashboardScreen(
                             Text(
                                 text = "HK PAY",
                                 style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onBackground
                             )
                             Text(
                                 text = "Welcome, ${profile.fullName.ifBlank { "Member" }}",
@@ -135,7 +138,15 @@ fun DashboardScreen(
                         }
                     }
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        ThemeCycleIconButton(
+                            themeMode = themeMode,
+                            onToggleTheme = onToggleTheme
+                        )
+
                         IconButton(
                             onClick = onNavigateNotifications,
                             modifier = Modifier.testTag("dashboard_notifications_button")
@@ -154,7 +165,8 @@ fun DashboardScreen(
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.Notifications,
-                                    contentDescription = "Notifications"
+                                    contentDescription = "Notifications",
+                                    tint = MaterialTheme.colorScheme.onBackground
                                 )
                             }
                         }
@@ -162,7 +174,7 @@ fun DashboardScreen(
                         Surface(
                             onClick = onNavigateProfile,
                             modifier = Modifier
-                                .size(42.dp)
+                                .size(40.dp)
                                 .testTag("dashboard_avatar_button"),
                             shape = CircleShape,
                             border = BorderStroke(1.5.dp, extra.cyanGlow.copy(alpha = 0.7f)),
@@ -189,22 +201,220 @@ fun DashboardScreen(
                 }
             }
 
-            // System Notice Banner if configured in Firebase
-            if (state.appSettings.systemNotice.isNotBlank()) {
+            // Admin System Notice / Banner
+            if (state.appSettings.systemNotice.isNotBlank() || state.appSettings.bannerTitle.isNotBlank()) {
                 item {
                     Surface(
                         shape = RoundedCornerShape(14.dp),
                         color = extra.electricBlue.copy(alpha = 0.14f),
-                        border = BorderStroke(1.dp, extra.cyanGlow.copy(alpha = 0.3f))
+                        border = BorderStroke(1.dp, extra.cyanGlow.copy(alpha = 0.35f))
                     ) {
-                        Text(
-                            text = state.appSettings.systemNotice,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface,
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(12.dp)
-                        )
+                        ) {
+                            if (state.appSettings.bannerTitle.isNotBlank()) {
+                                Text(
+                                    text = state.appSettings.bannerTitle,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = extra.cyanGlow
+                                )
+                                Spacer(Modifier.height(2.dp))
+                            }
+                            if (state.appSettings.systemNotice.isNotBlank()) {
+                                Text(
+                                    text = state.appSettings.systemNotice,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Card-Linked Balance Hero Card (Show / Hide)
+            item {
+                val linkedCards = state.issuedCards
+                val primaryCurrency = linkedCards.firstOrNull { it.providerBalanceSupported }
+                    ?.balanceCurrency
+                    ?.ifBlank { profile.preferredCurrency }
+                    ?: profile.preferredCurrency.ifBlank { "USD" }
+                val totalCardBalance = state.totalLinkedCardBalance
+
+                Surface(
+                    shape = RoundedCornerShape(22.dp),
+                    color = Color.Transparent,
+                    border = BorderStroke(1.2.dp, extra.cyanGlow.copy(alpha = 0.45f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("dashboard_balance_hero_card")
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(extra.cardGradientStart, extra.cardGradientEnd)
+                                )
+                            )
+                            .padding(18.dp)
+                    ) {
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(
+                                        text = "CARD-LINKED BALANCE",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(0xFF7BE8FF)
+                                    )
+                                    Text(
+                                        text = if (linkedCards.isNotEmpty()) {
+                                            "Synced with ${linkedCards.size} issued physical card(s)"
+                                        } else {
+                                            "Link a physical card to track live balance"
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.White.copy(alpha = 0.78f)
+                                    )
+                                }
+                                Surface(
+                                    onClick = onToggleBalanceVisible,
+                                    modifier = Modifier.testTag("dashboard_balance_toggle_button"),
+                                    shape = RoundedCornerShape(50),
+                                    color = Color.White.copy(alpha = 0.14f),
+                                    border = BorderStroke(1.dp, Color(0xFF5CEBFF).copy(alpha = 0.5f))
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = if (balanceVisible) HKPayIcons.VisibilityOff else HKPayIcons.Visibility,
+                                            contentDescription = if (balanceVisible) "Hide card balance" else "Show card balance",
+                                            tint = Color(0xFF5CEBFF),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(
+                                            text = if (balanceVisible) "Hide" else "Show",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = Color.White
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(Modifier.height(14.dp))
+                            Text(
+                                text = if (balanceVisible) {
+                                    FormatUtils.formatMoney(totalCardBalance, primaryCurrency)
+                                } else {
+                                    "••••••••"
+                                },
+                                fontFamily = JetBrainsMonoFontFamily,
+                                style = MaterialTheme.typography.displaySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                modifier = Modifier.testTag("dashboard_balance_value")
+                            )
+
+                            if (linkedCards.isNotEmpty()) {
+                                Spacer(Modifier.height(12.dp))
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    items(linkedCards, key = { it.cardId }) { card ->
+                                        Surface(
+                                            onClick = onNavigateMyCards,
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = Color.White.copy(alpha = 0.10f),
+                                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(
+                                                    imageVector = HKPayIcons.CreditCard,
+                                                    contentDescription = null,
+                                                    tint = Color(0xFF5CEBFF),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Spacer(Modifier.width(8.dp))
+                                                Column {
+                                                    Text(
+                                                        text = "${card.cardType.ifBlank { "Card" }} ••${card.last4.ifBlank { "0000" }}",
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        color = Color.White
+                                                    )
+                                                    Text(
+                                                        text = when {
+                                                            !balanceVisible -> "••••••"
+                                                            card.providerBalanceSupported -> FormatUtils.formatMoney(card.balance, card.balanceCurrency)
+                                                            else -> card.cardStatus
+                                                        },
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = Color(0xFF5CEBFF)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(Modifier.height(14.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = if (linkedCards.isNotEmpty()) onNavigateMyCards else onNavigateBuyCard,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(42.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, Color(0xFF5CEBFF).copy(alpha = 0.6f))
+                                ) {
+                                    Icon(
+                                        imageVector = if (linkedCards.isNotEmpty()) HKPayIcons.CreditCard else HKPayIcons.AddCard,
+                                        contentDescription = null,
+                                        tint = Color(0xFF5CEBFF),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        text = if (linkedCards.isNotEmpty()) "View Cards" else "Order Card",
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = onNavigateTransactions,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(42.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f))
+                                ) {
+                                    Icon(
+                                        imageVector = HKPayIcons.ReceiptLong,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        text = "Activity",
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -221,6 +431,7 @@ fun DashboardScreen(
                             Text(
                                 text = profile.fullName.ifBlank { "HK PAY Member" },
                                 style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -273,7 +484,7 @@ fun DashboardScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.VerifiedUser,
+                                    imageVector = HKPayIcons.VerifiedUser,
                                     contentDescription = null,
                                     tint = extra.warning
                                 )
@@ -289,7 +500,7 @@ fun DashboardScreen(
                                         color = extra.warning
                                     )
                                     Text(
-                                        text = "Tap to submit NID or Passport for physical card eligibility.",
+                                        text = "Tap to submit NID/Passport & Liveness check for card eligibility.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -335,20 +546,25 @@ fun DashboardScreen(
                 Column {
                     Text(
                         text = "Quick Actions",
-                        style = MaterialTheme.typography.titleMedium
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onBackground
                     )
                     Spacer(Modifier.height(10.dp))
-                    val actions = listOf(
-                        Triple("Buy Physical Card", Icons.Rounded.AddCard, onNavigateBuyCard),
-                        Triple("Card Designs", Icons.Rounded.Palette, onNavigateCardSelection),
-                        Triple("My Cards", Icons.Rounded.CreditCard, onNavigateMyCards),
-                        Triple("Track Order", Icons.Rounded.LocalShipping, onNavigateOrders),
-                        Triple("Transactions", Icons.AutoMirrored.Rounded.ReceiptLong, onNavigateTransactions),
-                        Triple("Refer & Earn", Icons.Rounded.CardGiftcard, onNavigateReferrals),
-                        Triple("App Guide", Icons.Rounded.PlayLesson, onNavigateTutorials),
-                        Triple("Profile", Icons.Rounded.Person, onNavigateProfile),
-                        Triple("Support", Icons.Rounded.SupportAgent, onNavigateSupport)
-                    )
+                    val actions = buildList {
+                        add(Triple("Buy Physical Card", HKPayIcons.AddCard, onNavigateBuyCard))
+                        add(Triple("Card Designs", HKPayIcons.Palette, onNavigateCardSelection))
+                        add(Triple("My Cards", HKPayIcons.CreditCard, onNavigateMyCards))
+                        add(Triple("Track Order", HKPayIcons.LocalShipping, onNavigateOrders))
+                        add(Triple("Transactions", HKPayIcons.ReceiptLong, onNavigateTransactions))
+                        if (state.appSettings.referralProgramEnabled) {
+                            add(Triple("Refer & Earn", HKPayIcons.CardGiftcard, onNavigateReferrals))
+                        } else {
+                            add(Triple("Exchange Rates", HKPayIcons.CurrencyExchange, onNavigateCurrencyRates))
+                        }
+                        add(Triple("App Guide", HKPayIcons.PlayLesson, onNavigateTutorials))
+                        add(Triple("Profile", Icons.Rounded.Person, onNavigateProfile))
+                        add(Triple("Support", HKPayIcons.SupportAgent, onNavigateSupport))
+                    }
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         actions.chunked(3).forEach { rowItems ->
                             Row(
@@ -375,28 +591,34 @@ fun DashboardScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    GlassCard(
-                        onClick = onNavigateReferrals,
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("dashboard_referral_card"),
-                        contentPadding = PaddingValues(14.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.CardGiftcard, contentDescription = null, tint = extra.cyanGlow)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Referral Bonus", style = MaterialTheme.typography.titleSmall)
+                    if (state.appSettings.referralProgramEnabled) {
+                        GlassCard(
+                            onClick = onNavigateReferrals,
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("dashboard_referral_card"),
+                            contentPadding = PaddingValues(14.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(HKPayIcons.CardGiftcard, contentDescription = null, tint = extra.cyanGlow)
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = "Referral Bonus",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                text = if (state.availableReferralCredit > 0.0) {
+                                    "${FormatUtils.formatMoney(state.availableReferralCredit, "USD")} credit available"
+                                } else {
+                                    "Code: ${state.userProfile.referralCode.ifBlank { "HKR" }}"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = extra.success
+                            )
                         }
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = if (state.availableReferralCredit > 0.0) {
-                                "${FormatUtils.formatMoney(state.availableReferralCredit, "USD")} credit available"
-                            } else {
-                                "Code: ${state.userProfile.referralCode.ifBlank { "HKR" }}"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = extra.success
-                        )
                     }
                     GlassCard(
                         onClick = onNavigateTutorials,
@@ -406,9 +628,13 @@ fun DashboardScreen(
                         contentPadding = PaddingValues(14.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.PlayLesson, contentDescription = null, tint = extra.cyanGlow)
+                            Icon(HKPayIcons.PlayLesson, contentDescription = null, tint = extra.cyanGlow)
                             Spacer(Modifier.width(8.dp))
-                            Text("HK PAY Guide", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                text = "HK PAY Guide",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
                         }
                         Spacer(Modifier.height(6.dp))
                         Text(
@@ -430,7 +656,8 @@ fun DashboardScreen(
                     ) {
                         Text(
                             text = "Currency Rates",
-                            style = MaterialTheme.typography.titleMedium
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onBackground
                         )
                         TextButton(
                             onClick = onNavigateCurrencyRates,
@@ -443,7 +670,7 @@ fun DashboardScreen(
                         GlassCard(onClick = onNavigateCurrencyRates) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
-                                    imageVector = Icons.Rounded.CurrencyExchange,
+                                    imageVector = HKPayIcons.CurrencyExchange,
                                     contentDescription = null,
                                     tint = extra.cyanGlow
                                 )
@@ -471,7 +698,8 @@ fun DashboardScreen(
                                     Spacer(Modifier.height(6.dp))
                                     Text(
                                         text = FormatUtils.formatMoney(rate.cardPurchaseRate, rate.targetCurrency),
-                                        style = MaterialTheme.typography.titleLarge
+                                        style = MaterialTheme.typography.titleLarge,
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
                                         text = "Market: ${FormatUtils.formatMoney(rate.currentRate, rate.targetCurrency)}",
@@ -485,6 +713,15 @@ fun DashboardScreen(
                 }
             }
 
+            // Reusable Recent Card Activity / Transaction History Component
+            item {
+                RecentCardActivitySection(
+                    transactions = state.transactions,
+                    onSeeAll = onNavigateTransactions,
+                    onSelectOrder = onNavigateOrderDetail
+                )
+            }
+
             // Recent Orders Section
             item {
                 Row(
@@ -494,7 +731,8 @@ fun DashboardScreen(
                 ) {
                     Text(
                         text = "Recent Orders",
-                        style = MaterialTheme.typography.titleMedium
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onBackground
                     )
                     if (state.orders.isNotEmpty()) {
                         TextButton(onClick = onNavigateOrders) {
@@ -507,7 +745,7 @@ fun DashboardScreen(
             if (state.orders.isEmpty()) {
                 item {
                     EmptyStateCard(
-                        icon = Icons.Rounded.CreditCard,
+                        icon = HKPayIcons.CreditCard,
                         title = "No Card Orders Yet",
                         subtitle = "Explore available physical card packages and place your first order.",
                         actionLabel = "Browse Card Store",
@@ -529,6 +767,7 @@ fun DashboardScreen(
                                 Text(
                                     text = order.packageName.ifBlank { "Physical Card" },
                                     style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -629,6 +868,7 @@ private fun QuickActionTile(
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )

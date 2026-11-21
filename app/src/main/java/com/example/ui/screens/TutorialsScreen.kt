@@ -25,14 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
-import androidx.compose.material.icons.rounded.AddCard
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.CreditCard
-import androidx.compose.material.icons.rounded.Fingerprint
-import androidx.compose.material.icons.rounded.LocalShipping
-import androidx.compose.material.icons.rounded.PersonAdd
-import androidx.compose.material.icons.rounded.Storefront
-import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -55,9 +48,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.example.data.model.ThemeMode
 import com.example.ui.components.GlassCard
 import com.example.ui.components.HKPayTopBar
 import com.example.ui.components.StatusBadge
+import com.example.ui.theme.HKPayIcons
 import com.example.ui.theme.LocalHKPayColors
 import kotlinx.coroutines.launch
 
@@ -77,28 +72,28 @@ private val TutorialPages = listOf(
     TutorialGuidePage(
         stepNumber = 1,
         badge = "STEP 1 • ACCOUNT SETUP",
-        title = "User Registration & Security",
-        summary = "Create your HK PAY profile with your legal name, verify your email address, and receive your unique HKP Member ID and referral code.",
-        icon = Icons.Rounded.PersonAdd,
+        title = "Registration, NID & Liveness",
+        summary = "Create your HK PAY account with email verification link, phone number (no OTP needed), NID photos, and a quick live selfie liveness check.",
+        icon = HKPayIcons.PersonAdd,
         highlights = listOf(
-            "Sign up with Full Name, Email, and optional Referral Code for $5.00 credit",
-            "Verify your email link to activate account persistence",
+            "Sign up with Full Name, Email link verification, Phone (No OTP) & optional Referral Code",
+            "Upload NID Front & Back photos and capture a live Liveness selfie",
             "Enable Fingerprint / Face Unlock in Profile for instant security"
         ),
         previewTitle = "HKP-94F2A1 • Biometric Ready",
         previewStatus = "Verified",
-        previewDetails = "Email verified • 2FA Biometric Lock supported"
+        previewDetails = "Email verified • NID + Live Selfie captured"
     ),
     TutorialGuidePage(
         stepNumber = 2,
         badge = "STEP 2 • CARD PACKAGES",
         title = "Browsing Card Packages",
         summary = "Explore live physical card packages synced directly from Firebase Realtime Database with transparent fees and USD package limits.",
-        icon = Icons.Rounded.Storefront,
+        icon = HKPayIcons.Storefront,
         highlights = listOf(
             "Compare Card Price, Issuing Fee, Delivery Fee, and Total Price upfront",
             "Swipe physical card finishes in the interactive Card Selection pager",
-            "Check live Availability and whether KYC is required before ordering"
+            "Check live card balances directly on the Dashboard with Show/Hide toggle"
         ),
         previewTitle = "Physical Card Store",
         previewStatus = "Available",
@@ -108,12 +103,12 @@ private val TutorialPages = listOf(
         stepNumber = 3,
         badge = "STEP 3 • ORDER & PAYMENT",
         title = "Card Ordering Process",
-        summary = "Select your card design, enter your shipping address, apply any referral fee credits, and pay via bKash, Nagad, Rocket, Bank, or Gateway.",
-        icon = Icons.Rounded.AddCard,
+        summary = "Select your card design, enter your shipping address, apply referral credits, and track real-time push notifications as status advances.",
+        icon = HKPayIcons.AddCard,
         highlights = listOf(
             "Review final price and apply earned Referral Credits before confirming",
-            "Upload your payment slip via Android Photo Picker for backend verification",
-            "Track all 14 order milestones from Order Placed to Active delivery"
+            "Upload your payment slip via Android Photo Picker for verification",
+            "Receive personalized FCM alerts as your order advances to delivery"
         ),
         previewTitle = "Order ORD-8421 • Courier Tracked",
         previewStatus = "Card Processing",
@@ -122,13 +117,13 @@ private val TutorialPages = listOf(
     TutorialGuidePage(
         stepNumber = 4,
         badge = "STEP 4 • IDENTITY CHECK",
-        title = "KYC Verification",
-        summary = "Submit your NID or Passport details once from the KYC page to unlock physical card issuance and delivery.",
-        icon = Icons.Rounded.VerifiedUser,
+        title = "KYC & Activity Tracking",
+        summary = "Manage your identity documents and inspect every card transaction and balance movement in one clean dashboard.",
+        icon = HKPayIcons.VerifiedUser,
         highlights = listOf(
-            "Enter legal name, Date of Birth, country, and NID / Passport number",
-            "Upload front, back, and optional selfie securely using Photo Picker",
-            "Documents are stored privately per-user in encrypted Firebase Storage"
+            "Complete your 13-field Premium Profile for faster physical card dispatch",
+            "Switch cleanly between Dark, Light, and Navy themes from any header",
+            "Inspect live card activity & history from Firebase Realtime Database"
         ),
         previewTitle = "Identity Verification",
         previewStatus = "Approved",
@@ -138,6 +133,8 @@ private val TutorialPages = listOf(
 
 @Composable
 fun TutorialsScreen(
+    themeMode: ThemeMode,
+    onToggleTheme: () -> Unit,
     onComplete: () -> Unit,
     onSkip: () -> Unit,
     onBack: () -> Unit
@@ -152,6 +149,8 @@ fun TutorialsScreen(
             HKPayTopBar(
                 title = "HK PAY Tutorials",
                 onBack = onBack,
+                themeMode = themeMode,
+                onToggleTheme = onToggleTheme,
                 actions = {
                     TextButton(
                         onClick = onSkip,
@@ -241,7 +240,7 @@ fun TutorialsScreen(
                                     Text(
                                         text = page.badge,
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = extra.cyanGlow
+                                        color = Color(0xFF7BE8FF)
                                     )
                                     Spacer(Modifier.height(14.dp))
                                     Box(
@@ -254,7 +253,7 @@ fun TutorialsScreen(
                                         Icon(
                                             imageVector = page.icon,
                                             contentDescription = page.title,
-                                            tint = extra.cyanGlow,
+                                            tint = Color(0xFF5CEBFF),
                                             modifier = Modifier.size(36.dp)
                                         )
                                     }
@@ -276,13 +275,13 @@ fun TutorialsScreen(
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                                     Icon(
                                                         imageVector = when (page.stepNumber) {
-                                                            1 -> Icons.Rounded.Fingerprint
-                                                            2 -> Icons.Rounded.CreditCard
-                                                            3 -> Icons.Rounded.LocalShipping
-                                                            else -> Icons.Rounded.VerifiedUser
+                                                            1 -> HKPayIcons.Fingerprint
+                                                            2 -> HKPayIcons.CreditCard
+                                                            3 -> HKPayIcons.LocalShipping
+                                                            else -> HKPayIcons.VerifiedUser
                                                         },
                                                         contentDescription = null,
-                                                        tint = extra.cyanGlow,
+                                                        tint = Color(0xFF5CEBFF),
                                                         modifier = Modifier.size(18.dp)
                                                     )
                                                     Spacer(Modifier.width(8.dp))
@@ -311,7 +310,8 @@ fun TutorialsScreen(
                             Text(
                                 text = page.title,
                                 style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             Spacer(Modifier.height(8.dp))
                             Text(
@@ -334,7 +334,8 @@ fun TutorialsScreen(
                                     Spacer(Modifier.width(8.dp))
                                     Text(
                                         text = bullet,
-                                        style = MaterialTheme.typography.bodySmall
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
                                 }
                             }

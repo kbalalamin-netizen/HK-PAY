@@ -22,7 +22,9 @@ import com.example.data.model.UserProfile
 import com.example.data.repository.AuthRepository
 import com.example.data.repository.HKPayRepository
 import com.example.data.repository.ThemePreferencesRepository
+import com.example.notifications.NotificationHelper
 import com.google.firebase.messaging.FirebaseMessaging
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -65,6 +67,12 @@ data class MainDashboardState(
     val activeCardsCount: Int
         get() = issuedCards.count { it.cardStatus.equals("Active", ignoreCase = true) }
 
+    val totalLinkedCardBalance: Double
+        get() = issuedCards.filter { it.providerBalanceSupported }.sumOf { it.balance }
+
+    val hasAnyBalanceSupportedCard: Boolean
+        get() = issuedCards.any { it.providerBalanceSupported }
+
     val pendingOrdersCount: Int
         get() = orders.count {
             it.orderStatus !in listOf("Active", "Delivered", "Cancelled", "Refunded")
@@ -96,7 +104,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val themeMode: StateFlow<ThemeMode> = themeRepository.themeMode.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
-        initialValue = ThemeMode.DARK
+        initialValue = ThemeMode.NAVY
     )
 
     val biometricEnabled: StateFlow<Boolean> = themeRepository.biometricEnabled.stateIn(
@@ -106,6 +114,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     val tutorialCompleted: StateFlow<Boolean> = themeRepository.tutorialCompleted.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = false
+    )
+
+    val balanceVisible: StateFlow<Boolean> = themeRepository.balanceVisible.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = true
@@ -122,16 +136,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private var boundUid: String? = null
     private val observationJobs = mutableListOf<Job>()
+    private var hasLoadedInitialOrders = false
+    private val lastKnownOrderStatuses = mutableMapOf<String, String>()
 
     fun bindUser(uid: String) {
         if (boundUid == uid && observationJobs.isNotEmpty()) return
         boundUid = uid
         observationJobs.forEach { it.cancel() }
         observationJobs.clear()
+        hasLoadedInitialOrders = false
+        lastKnownOrderStatuses.clear()
 
         _state.update { it.copy(isLoading = true) }
 
-        syncFcmToken(uid)
+        syncFcmTokenAndTopics(uid)
 
         observationJobs += viewModelScope.launch {
             repository.observeUserProfile(uid).collect { profile ->
@@ -145,6 +163,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         observationJobs += viewModelScope.launch {
             repository.observeOrders(uid).collect { orders ->
+                handlePersonalizedOrderStatusNotifications(uid, orders)
                 _state.update { it.copy(orders = orders) }
             }
         }
@@ -195,16 +214,81 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun handlePersonalizedOrderStatusNotifications(uid: String, orders: List<CardOrder>) {
+        if (!hasLoadedInitialOrders) {
+            orders.forEach { lastKnownOrderStatuses[it.orderId] = it.orderStatus }
+            hasLoadedInitialOrders = true
+            return
+        }
+        val orderUpdatesEnabled = _state.value.userProfile.notificationPrefs.orderUpdates
+        val customerName = _state.value.userProfile.fullName
+        orders.forEach { order ->
+            val previous = lastKnownOrderStatuses[order.orderId]
+            if (previous != null && previous != order.orderStatus) {
+                lastKnownOrderStatuses[order.orderId] = order.orderStatus
+                if (orderUpdatesEnabled) {
+                    val (title, body) = NotificationHelper.buildPersonalizedOrderMessage(
+                        customerName = customerName.ifBlank { order.customerName },
+                        packageName = order.packageName,
+                        orderId = order.orderId,
+                        orderStatus = order.orderStatus,
+                        trackingNumber = order.trackingNumber
+                    )
+                    NotificationHelper.showNotification(
+                        context = getApplication(),
+                        title = title,
+                        body = body,
+                        type = "Order Status",
+                        orderId = order.orderId
+                    )
+                    viewModelScope.launch(Dispatchers.IO) {
+                        repository.recordInAppOrderNotification(
+                            uid = uid,
+                            title = title,
+                            message = body,
+                            orderId = order.orderId
+                        )
+                    }
+                }
+            } else {
+                lastKnownOrderStatuses[order.orderId] = order.orderStatus
+            }
+        }
+    }
+
     fun clearSession() {
         observationJobs.forEach { it.cancel() }
         observationJobs.clear()
         boundUid = null
+        hasLoadedInitialOrders = false
+        lastKnownOrderStatuses.clear()
         _isBiometricUnlockedThisSession.value = false
         _state.value = MainDashboardState(isLoading = false)
     }
 
     fun unlockBiometrically() {
         _isBiometricUnlockedThisSession.value = true
+    }
+
+    fun toggleBalanceVisibility() {
+        val next = !balanceVisible.value
+        viewModelScope.launch {
+            themeRepository.setBalanceVisible(next)
+        }
+    }
+
+    fun cycleThemeMode() {
+        val next = themeMode.value.next()
+        viewModelScope.launch {
+            themeRepository.setThemeMode(next)
+            _events.emit(UiEvent.ShowMessage("Theme switched to ${next.label}"))
+        }
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        viewModelScope.launch {
+            themeRepository.setThemeMode(mode)
+        }
     }
 
     fun setBiometricEnabled(enabled: Boolean) {
@@ -234,12 +318,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun claimReferralCode(code: String) {
         val uid = boundUid ?: return
         val name = _state.value.userProfile.fullName
+        val bonus = _state.value.appSettings.referralBonusAmount.takeIf { it > 0.0 } ?: AuthRepository.REFERRAL_BONUS_USD
         viewModelScope.launch {
             _state.update { it.copy(isSubmitting = true) }
-            repository.claimReferralCode(uid, name, code)
+            repository.claimReferralCode(uid, name, code, bonus)
                 .onSuccess {
                     _state.update { it.copy(isSubmitting = false) }
-                    _events.emit(UiEvent.ShowMessage("Referral bonus unlocked! $5.00 fee credit added."))
+                    _events.emit(UiEvent.ShowMessage("Referral bonus unlocked! $${String.format("%.2f", bonus)} fee credit added."))
                 }
                 .onFailure { err ->
                     _state.update { it.copy(isSubmitting = false) }
@@ -248,21 +333,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun syncFcmToken(uid: String) {
+    private fun syncFcmTokenAndTopics(uid: String) {
         runCatching {
-            FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+            val messaging = FirebaseMessaging.getInstance()
+            messaging.subscribeToTopic("all_users")
+            messaging.subscribeToTopic("user_$uid")
+            messaging.subscribeToTopic("orders_$uid")
+            messaging.token.addOnSuccessListener { token ->
                 if (!token.isNullOrBlank()) {
-                    viewModelScope.launch {
+                    viewModelScope.launch(Dispatchers.IO) {
                         repository.syncFcmToken(uid, token)
                     }
                 }
             }
-        }
-    }
-
-    fun setThemeMode(mode: ThemeMode) {
-        viewModelScope.launch {
-            themeRepository.setThemeMode(mode)
         }
     }
 
@@ -280,7 +363,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         orderNotes: String
     ) {
         val uid = boundUid ?: return
-        val availableRewards = _state.value.referralRewards.filter { it.status == "Available" }
+        val currentState = _state.value
+        if (!currentState.appSettings.cardOrderingEnabled) {
+            viewModelScope.launch {
+                _events.emit(UiEvent.ShowMessage("Card ordering is currently paused by administrator.", true))
+            }
+            return
+        }
+        val availableRewards = currentState.referralRewards.filter { it.status == "Available" }
         val discount = if (applyReferralCredit) {
             availableRewards.sumOf { it.amount }.coerceAtMost(cardPackage.computedTotal)
         } else 0.0
@@ -347,7 +437,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         documentNumber: String,
         frontUri: Uri?,
         backUri: Uri?,
-        selfieUri: Uri?
+        selfieUri: Uri?,
+        livenessChallenge: String
     ) {
         val uid = boundUid ?: return
         val existing = _state.value.kycSubmission
@@ -363,9 +454,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 frontUri = frontUri,
                 backUri = backUri,
                 selfieUri = selfieUri,
+                livenessChallenge = livenessChallenge,
                 existingFrontUrl = existing.frontDocumentUrl,
                 existingBackUrl = existing.backDocumentUrl,
-                existingSelfieUrl = existing.selfieUrl
+                existingSelfieUrl = existing.selfieUrl,
+                existingLivenessVerified = existing.livenessVerified
             ).onSuccess {
                 _state.update { it.copy(isSubmitting = false) }
                 _events.emit(UiEvent.KycSubmitted)
@@ -376,11 +469,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun updateProfile(fullName: String, phone: String, country: String) {
+    fun updateProfile(
+        fullName: String,
+        phone: String,
+        country: String,
+        dateOfBirth: String,
+        gender: String,
+        nidNumber: String,
+        occupation: String,
+        monthlyIncomeRange: String,
+        preferredCurrency: String,
+        streetAddress: String,
+        cityUpazila: String,
+        district: String,
+        postalCode: String
+    ) {
         val uid = boundUid ?: return
         viewModelScope.launch {
             _state.update { it.copy(isSubmitting = true) }
-            repository.updateProfile(uid, fullName, phone, country)
+            repository.updateProfile(
+                uid = uid,
+                fullName = fullName,
+                phone = phone,
+                country = country,
+                dateOfBirth = dateOfBirth,
+                gender = gender,
+                nidNumber = nidNumber,
+                occupation = occupation,
+                monthlyIncomeRange = monthlyIncomeRange,
+                preferredCurrency = preferredCurrency,
+                streetAddress = streetAddress,
+                cityUpazila = cityUpazila,
+                district = district,
+                postalCode = postalCode
+            )
                 .onSuccess {
                     _state.update { it.copy(isSubmitting = false) }
                     _events.emit(UiEvent.ProfileUpdated)

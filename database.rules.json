@@ -41,7 +41,15 @@
     },
     "app_settings": {
       ".read": "auth != null",
-      ".write": false
+      ".write": false,
+      "maintenanceMode": { ".read": true },
+      "maintenanceMessage": { ".read": true },
+      "registrationEnabled": { ".read": true },
+      "referralProgramEnabled": { ".read": true },
+      "referralBonusAmount": { ".read": true },
+      "systemNotice": { ".read": true },
+      "supportEmail": { ".read": true },
+      "paymentMethods": { ".read": "auth != null" }
     },
     "orders": {
       "$uid": {

@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
@@ -21,10 +20,6 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AddCard
-import androidx.compose.material.icons.rounded.Palette
-import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -47,11 +42,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import com.example.data.model.CardDesignOption
 import com.example.data.model.CardPackage
+import com.example.data.model.ThemeMode
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.GlassCard
 import com.example.ui.components.HKPayPhysicalCardVisual
 import com.example.ui.components.HKPayPrimaryButton
 import com.example.ui.components.HKPayTopBar
+import com.example.ui.theme.HKPayIcons
 import com.example.ui.theme.LocalHKPayColors
 import com.example.ui.viewmodel.MainDashboardState
 import com.example.util.FormatUtils
@@ -99,7 +96,9 @@ val HKPayCardDesigns = listOf(
 @Composable
 fun CardSelectionScreen(
     state: MainDashboardState,
+    themeMode: ThemeMode,
     initialPackageId: String = "",
+    onToggleTheme: () -> Unit,
     onBack: () -> Unit,
     onProceedToBuy: (packageId: String, selectedDesignName: String) -> Unit
 ) {
@@ -116,10 +115,18 @@ fun CardSelectionScreen(
 
     val pagerState = rememberPagerState(pageCount = { HKPayCardDesigns.size })
     val activeDesign = HKPayCardDesigns[pagerState.currentPage]
+    val orderingEnabled = state.appSettings.cardOrderingEnabled
 
     Scaffold(
         containerColor = Color.Transparent,
-        topBar = { HKPayTopBar(title = "Select Card Design", onBack = onBack) }
+        topBar = {
+            HKPayTopBar(
+                title = "Select Card Design",
+                onBack = onBack,
+                themeMode = themeMode,
+                onToggleTheme = onToggleTheme
+            )
+        }
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -137,9 +144,13 @@ fun CardSelectionScreen(
             ) {
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Palette, contentDescription = null, tint = extra.cyanGlow)
+                        Icon(HKPayIcons.Palette, contentDescription = null, tint = extra.cyanGlow)
                         Spacer(Modifier.width(8.dp))
-                        Text("Swipe to Choose Physical Finish", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Swipe to Choose Physical Finish",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
                     }
                     Text(
                         text = "Preview how your HK PAY physical card looks before completing your order.",
@@ -208,11 +219,15 @@ fun CardSelectionScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(activeDesign.name, style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            activeDesign.name,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
                         Text(
                             text = activeDesign.finishLabel,
                             style = MaterialTheme.typography.labelMedium,
-                            color = Color(activeDesign.accentHex)
+                            color = extra.cyanGlow
                         )
                     }
                     Spacer(Modifier.height(6.dp))
@@ -225,12 +240,16 @@ fun CardSelectionScreen(
 
                 // Card Package Selection
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    Text("Select Live Card Package", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Select Live Card Package",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
                     Spacer(Modifier.height(8.dp))
 
                     if (availablePackages.isEmpty()) {
                         EmptyStateCard(
-                            icon = Icons.Rounded.Storefront,
+                            icon = HKPayIcons.Storefront,
                             title = "Awaiting Card Packages in Firebase",
                             subtitle = "Packages from Firebase RTDB (/card_packages) will appear here for ordering once published."
                         )
@@ -261,7 +280,12 @@ fun CardSelectionScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("Total Price", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        "Total Price",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
                                     Text(
                                         text = FormatUtils.formatMoney(pkg.computedTotal, pkg.currency),
                                         style = MaterialTheme.typography.titleLarge,
@@ -270,9 +294,13 @@ fun CardSelectionScreen(
                                 }
                                 Spacer(Modifier.height(14.dp))
                                 HKPayPrimaryButton(
-                                    text = if (pkg.available) "Continue with ${activeDesign.name}" else "Package Unavailable",
-                                    enabled = pkg.available,
-                                    icon = Icons.Rounded.AddCard,
+                                    text = when {
+                                        !orderingEnabled -> "Ordering Paused by Admin"
+                                        pkg.available -> "Continue with ${activeDesign.name}"
+                                        else -> "Package Unavailable"
+                                    },
+                                    enabled = pkg.available && orderingEnabled,
+                                    icon = HKPayIcons.AddCard,
                                     onClick = { onProceedToBuy(pkg.id, activeDesign.name) },
                                     testTag = "card_selection_continue_button"
                                 )

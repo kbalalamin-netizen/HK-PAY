@@ -16,6 +16,8 @@ import com.example.R
 
 object NotificationHelper {
 
+    const val EXTRA_ORDER_ID = "extra_hkpay_order_id"
+
     fun createNotificationChannels(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -25,7 +27,7 @@ object NotificationHelper {
                 context.getString(R.string.fcm_channel_orders_name),
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Card order, shipment, delivery, and activation updates"
+                description = "Personalized card order, shipment, delivery, and activation updates"
             }
 
             val securityChannel = NotificationChannel(
@@ -41,7 +43,7 @@ object NotificationHelper {
                 context.getString(R.string.fcm_channel_general_name),
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
-                description = "System notices and currency rate updates"
+                description = "System notices, referrals, and currency rate updates"
             }
 
             manager.createNotificationChannels(listOf(ordersChannel, securityChannel, generalChannel))
@@ -52,7 +54,8 @@ object NotificationHelper {
         context: Context,
         title: String,
         body: String,
-        type: String
+        type: String,
+        orderId: String = ""
     ) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val granted = ContextCompat.checkSelfPermission(
@@ -71,11 +74,15 @@ object NotificationHelper {
         }
 
         val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            if (orderId.isNotBlank()) {
+                putExtra(EXTRA_ORDER_ID, orderId)
+            }
         }
+        val notifId = if (orderId.isNotBlank()) orderId.hashCode() else System.currentTimeMillis().toInt()
         val pendingIntent = PendingIntent.getActivity(
             context,
-            System.currentTimeMillis().toInt(),
+            notifId,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -90,7 +97,34 @@ object NotificationHelper {
             .setContentIntent(pendingIntent)
             .build()
 
-        NotificationManagerCompat.from(context)
-            .notify(System.currentTimeMillis().toInt(), notification)
+        NotificationManagerCompat.from(context).notify(notifId, notification)
+    }
+
+    fun buildPersonalizedOrderMessage(
+        customerName: String,
+        packageName: String,
+        orderId: String,
+        orderStatus: String,
+        trackingNumber: String = ""
+    ): Pair<String, String> {
+        val firstName = customerName.trim().substringBefore(" ").ifBlank { "Member" }
+        val cardLabel = packageName.ifBlank { "HK PAY Physical Card" }
+        val title = when (orderStatus) {
+            "Payment Confirmed" -> "$firstName, Payment Confirmed!"
+            "KYC Approved" -> "$firstName, KYC Approved"
+            "Card Processing" -> "$cardLabel is Being Prepared"
+            "Card Issued" -> "Your $cardLabel is Issued!"
+            "Shipped", "In Transit" -> "On the Way: $cardLabel"
+            "Delivered" -> "$cardLabel Delivered!"
+            "Active" -> "$cardLabel is Now Active"
+            else -> "Order Update: $orderStatus"
+        }
+        val body = buildString {
+            append("Hi $firstName, your $cardLabel ($orderId) status updated to $orderStatus.")
+            if (trackingNumber.isNotBlank()) {
+                append(" Tracking: $trackingNumber.")
+            }
+        }
+        return title to body
     }
 }
